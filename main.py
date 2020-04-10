@@ -1,11 +1,7 @@
-import numpy as np
+from common import *
 import random
+from conversion import h_to_mat
 import permutations
-
-dtype = np.int
-A = np.matrix([[1,1,2],[0,1,1],[0,-3,-2]], dtype=dtype)
-B = np.matrix([[-2,0,-1],[-5,1,-1],[3,0,1]], dtype=dtype)
-I3 = np.identity(3, dtype=dtype)
 
 def main():
 
@@ -49,15 +45,8 @@ def random_H_str(length):
         result += m
     return result
 
-def h_str_to_mat(s):
-    result = I3
-    for i in range(len(s)):
-        m = A if s[i] == "A" else B
-        result = result*m
-    return result
-
 def random_H(length):
-    return h_str_to_mat(random_H_str(length))
+    return h_to_mat(random_H_str(length))
 
 if __name__ == "__main__":
     main()
