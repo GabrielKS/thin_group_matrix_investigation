@@ -1,6 +1,7 @@
 import main as base
 import numpy as np
-# random change to test
+# random change to test 
+# also testing
 
 def main():
     # print(reduce("ABABABAB"))
