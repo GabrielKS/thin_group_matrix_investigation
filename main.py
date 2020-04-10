@@ -1,6 +1,6 @@
 from common import *
 import random
-from conversion import h_str_to_mat
+from conversion import h_to_mat
 import permutations
 
 def main():
@@ -46,7 +46,7 @@ def random_H_str(length):
     return result
 
 def random_H(length):
-    return h_str_to_mat(random_H_str(length))
+    return h_to_mat(random_H_str(length))
 
 if __name__ == "__main__":
     main()
