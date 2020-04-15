@@ -21,17 +21,32 @@ def main():
     # permutations.main()
     # print((A*B*A*A*B*B)**178)
     # print(A*A)
-    print(A*A)
+    #print(A*A)
+
+    run_test(mod10_11,1000)
 
 def run_test(fn, times):
     passes = True
     for i in range(times):
-        m = random_H(10)
+        m = random_H(20)
         if not fn(m): passes = False
     print(passes)
 
 def is_001(m):
     return m[2,0]%3 == 0 and m[2,1]%3 == 0 and m[2,2]%3 == 1
+
+def mod00_01(m):
+    return not (m[0,0]%3 == 0 and m[0,1]%3 == 0)
+
+def mod00_10(m):
+    return not (m[0,0]%3 == 0 and m[1,0]%3 == 0)
+
+def mod10_11(m):
+    return not (m[1,0]%3 == 0 and m[1,1]%3 == 0)
+
+def mod01_11(m):
+    return not (m[0,1]%3 == 0 and m[1,1]%3 == 0)
+
 
 def is_01_implies_02(m):
     if m[0,1]%3 == 0:
