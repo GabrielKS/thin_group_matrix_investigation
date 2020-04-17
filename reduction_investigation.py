@@ -3,7 +3,7 @@ import conversion
 import time
 import copy
 
-max_length = 12
+max_length = 15
 
 words = [None]  # Element 0 of words is None. Element i of words for i>0 is a dictionary containing information about the word corresponding to that index
 
@@ -37,23 +37,29 @@ def populate(length):  # Populate words with all the words of length length, ass
     t2 = time.perf_counter()
     print("Population time (length="+str(length)+"): "+str(t2-t1))
 
-def analyze(length, find_all_shorter=True):  # Analyze words of length length, assuming analyze(length-1) has already been called for length>0. If find_all_shorter, this will find all equal shorter words; if not, it will only find a shortest
+def analyze(length):  # Analyze words of length length, assuming analyze(length-1) has already been called for length>0. If find_all_shorter, this will find all equal shorter words; if not, it will only find a shortest
     t1 = time.perf_counter()
     
     these_words = words[2**length:2**(length+1)]
     shorter_words = words[1:2**length]
+
+    these_words_3d = np.stack([np.asarray(this_word["mat"]) for this_word in these_words])  # Stack the matrices in these_words into a three-dimensional array for faster comparison
+    shorter_words_3d = np.stack([np.asarray(this_word["mat"]) for this_word in shorter_words]) if len(shorter_words) > 0 else np.empty((0,3,3))
+
     for this_word in these_words:
         if this_word["analyzed"]: continue
 
+        this_mat = np.asarray(this_word["mat"])
+
         this_word["equal_same_length"] = []
-        for other_word in these_words:
-            if np.array_equal(this_word["mat"], other_word["mat"]): this_word["equal_same_length"].append(other_word["int"])
+        same_length_comparison = np.equal(this_mat, these_words_3d).all(axis=1).all(axis=1)  # Compare this_mat to these_words_3d and "and" all the results together across the dimensions that correspond to the original matrices, so we get a one-dimensional array of boolean values corresponding to whether this_mat is equal to each matrix in these_words
+        for i, v in enumerate(same_length_comparison):  # Loop through the boolean array, keeping track of index and value
+            if v: this_word["equal_same_length"].append(these_words[i]["int"])  # If we have a match, record the number of the matrix we've matched with
 
         this_word["equal_shorter_length"] = []
-        for other_word in shorter_words:
-            if np.array_equal(this_word["mat"], other_word["mat"]):
-                this_word["equal_shorter_length"].append(other_word["int"])
-                if not find_all_shorter: break  # changes behavior
+        shorter_length_comparison = np.equal(this_mat, shorter_words_3d).all(axis=1).all(axis=1)  # This method of comparison (here and above) results in roughly 18x faster analysis compared to looping through all the matrices and comparing one at a time
+        for i, v in enumerate(shorter_length_comparison):
+            if v: this_word["equal_shorter_length"].append(shorter_words[i]["int"])
 
         this_word["reduced"] = (len(this_word["equal_shorter_length"]) == 0)
 
@@ -70,7 +76,7 @@ def analyze(length, find_all_shorter=True):  # Analyze words of length length, a
 
         this_word["analyzed"] = True
 
-        for other_i in this_word["equal_same_length"]:  # Optimize by copying information for equal words of the same length
+        for other_i in this_word["equal_same_length"]:  # Optimize by copying information for equal words of the same length (makes analysis roughly 8x faster)
             if words[other_i]["analyzed"]: continue
             words[other_i].update(copy.deepcopy(this_word))
 
