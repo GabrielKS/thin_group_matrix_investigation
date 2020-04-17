@@ -1,6 +1,7 @@
 from common import *
 import conversion
 import time
+import copy
 
 max_length = 12
 
@@ -30,6 +31,7 @@ def populate(length):  # Populate words with all the words of length length, ass
         these_words[i]["word"] = conversion.int_to_h(these_words[i]["int"])
         these_words[i]["length"] = length
         these_words[i]["mat"] = conversion.h_to_mat(these_words[i]["word"])
+        these_words[i]["analyzed"] = False
     words.extend(these_words)
     
     t2 = time.perf_counter()
@@ -41,9 +43,10 @@ def analyze(length, find_all_shorter=True):  # Analyze words of length length, a
     these_words = words[2**length:2**(length+1)]
     shorter_words = words[1:2**length]
     for this_word in these_words:
+        if this_word["analyzed"]: continue
+
         this_word["equal_same_length"] = []
         for other_word in these_words:
-            if other_word["int"] == this_word["int"]: continue
             if np.array_equal(this_word["mat"], other_word["mat"]): this_word["equal_same_length"].append(other_word["int"])
 
         this_word["equal_shorter_length"] = []
@@ -54,7 +57,7 @@ def analyze(length, find_all_shorter=True):  # Analyze words of length length, a
 
         this_word["reduced"] = (len(this_word["equal_shorter_length"]) == 0)
 
-        ints_equal_shorter_or_same_length = this_word["equal_shorter_length"]+this_word["equal_same_length"]+[this_word["int"]]  # Note that this is a list of ints, not a list of dicts
+        ints_equal_shorter_or_same_length = this_word["equal_shorter_length"]+this_word["equal_same_length"]  # Note that this is a list of ints, not a list of dicts
         this_word["reduced_length"] = min([other_word for other_word in ints_equal_shorter_or_same_length])
 
         this_word["reduced_forms"] = []
@@ -62,8 +65,14 @@ def analyze(length, find_all_shorter=True):  # Analyze words of length length, a
             if other_word == this_word["reduced_length"]: this_word["reduced_forms"].append(other_word)
 
         this_word["unique_shorter_or_same_length"] = (len(ints_equal_shorter_or_same_length) == 1)  # 1 because ints_equal_shorter_or_same_length includes this_word
-        this_word["unique_same_length"] = (len(this_word["equal_same_length"]) == 0)
+        this_word["unique_same_length"] = (len(this_word["equal_same_length"]) == 1)
         this_word["reduced_nonunique"] = this_word["reduced"] and not this_word["unique_same_length"]
+
+        this_word["analyzed"] = True
+
+        for other_i in this_word["equal_same_length"]:  # Optimize by copying information for equal words of the same length
+            if words[other_i]["analyzed"]: continue
+            words[other_i].update(copy.deepcopy(this_word))
 
     t2 = time.perf_counter()
     print("Analysis time (length="+str(length)+"): "+str(t2-t1))
