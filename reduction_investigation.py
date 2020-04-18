@@ -78,12 +78,12 @@ def analyze(length):  # Analyze words of length length, assuming analyze(length-
 
         for other_i in this_word["equal_same_length"]:  # Optimize by copying information for equal words of the same length (makes analysis roughly 8x faster)
             if words[other_i]["analyzed"]: continue
-            new_data = copy.deepcopy(this_word)
-            del new_data["int"]
-            del new_data["word"]
-            del new_data["length"]
-            del new_data["mat"]
-            words[other_i].update(new_data)
+            other_data = copy.deepcopy(this_word)
+            del other_data["int"]
+            del other_data["word"]
+            del other_data["length"]
+            del other_data["mat"]
+            words[other_i].update(other_data)
 
     t2 = time.perf_counter()
     print("Analysis time (length="+str(length)+"): "+str(t2-t1))
