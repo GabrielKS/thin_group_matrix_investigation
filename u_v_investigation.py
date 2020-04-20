@@ -25,11 +25,11 @@ for u  in range (-10000,10000):
                     d = (-4)*(u**2)*(5+u)+(4)*(u)*(8+u)*(v)+(-20+(u)*(4+u))*(v**2)-4*(v**3) # computing the value of d
                     if d > 0: #d has to be positive for its square root to be an integer
                         dRoot = math.sqrt(d)
-                        entry13 = u*(-*(u**3)*v+4*u*(v**2)-2*(v**3)+(u**2)*(-6*v+dRoot))/t
+                        entry13 = u*(-(u**3)*v+4*u*(v**2)-2*(v**3)+(u**2)*(-6*v+dRoot))/t
                         entry13Int = int(entry13)
                         if entry13 == entry13Int: #checking that a13 is an integer
                             #at this point A is in SL3Z since a matrix of this form will always have det 1
-                            b13 = u * (-2*(u**3)+2*(v**3)-(u**2)*v*(2+v)+u*v*(-2*v + dRoot))/t
+                            b13 = u * (2*(u**3)+2*(v**3)-(u**2)*v*(2+v)+u*v*(-2*v + dRoot))/t
                             b13Int = int(b13)
                             if b13 == b13Int: #checking that b13 is an integer
                                 b21 = (-2*(v**2) + (u**2)*(2+v) + u *(4*v+ dRoot))/ (2* (u**2))
@@ -39,3 +39,4 @@ for u  in range (-10000,10000):
                                     b31Int = int(b31)
                                     if b31 == b31Int: #checking that b31 is an integer
                                         print("Solution: ",u,v)
+print("finished")
