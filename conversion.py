@@ -44,6 +44,7 @@ def bin_to_int(b):
 
 def bin_to_h_unreduced(b):
     b = b.lstrip("0")  # Remove any leading zeroes
+    if len(b) == 0: return None
     b = b[1:]  # Remove the leading 1
     result = ""
     for digit in b:
@@ -56,7 +57,13 @@ def h_to_bin_unreduced(s):
         result += ("0" if factor == "A" else "1")
     return result
 
-def bin_to_h_reduced(b):
+def int_to_h(n):
+    return bin_to_h_unreduced(int_to_bin(n))
+
+def h_to_int(s):
+    return bin_to_int(h_to_bin_unreduced(s))
+
+def bin_to_h_reduced(b):  # Turns out this doesn't work.
     b = b.lstrip("0")  # Remove any leading zeroes
     b = b[1:]  # Remove the leading 1
     result = ""
