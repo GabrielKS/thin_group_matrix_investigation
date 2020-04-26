@@ -7,10 +7,10 @@ import atexit
 import os
 import pickle
 
-# SETTINGS
+# OUTPUT SETTINGS
 max_length = 20  # Maximum word length to examine
 print_times_length = True  # Whether or not to print how much time the steps take
-min_length_to_save = 14  # Minimum length to save the output files every iteration
+min_length_to_save = 15  # Minimum length to save the output files every iteration
 output_dir = "output"  # Output folder name
 
 # INTERMEDIATE DATA STRUCTURES
@@ -18,7 +18,7 @@ words = [None]  # Element 0 of words is None. Element i of words for i>0 is a di
 timers = {"population_time": 0, "analysis_time": 0, "summarization_time": 0}
 log_strings = {"population_time": "", "analysis_time": "", "summarization_time": "", "results_summary": ""}
 states = {"length_calculated": -1}
-unique_matrices_all = np.empty((0,3,3))  # All the matrices in unique_results_all but in 3D form, for faster computation
+unique_matrices_hashed = np.empty((0))  # A list of the hashes of all the matrices in unique_results_all, for faster computation
 
 # OUTPUT DATA STRUCTURES
 unique_results_all = []  # Array of dictionaries per unique matrix {"mat": NumPy_matrix_representing_this_h, "refs": all_integer_representations_of_this_h}
@@ -52,35 +52,37 @@ def analyze(length):  # Analyze words of length length, assuming analyze(length-
     these_words = words[length_to_ref(length):length_to_ref(length+1)]  # These are all the words of length length
 
     these_unique_results = []
-    these_unique_matrices = np.empty((0,3,3))
-    
-    for this_word in these_words:  # Populate these_unique_results and these_unique_matrices
-        this_nd = np.asarray(this_word["mat"])  # Convert from NumPy matrix to NumPy ndarray for the streamlined comparison
+    these_unique_matrices_hashed = np.empty((0))
+    t0=0
+    for this_word in these_words:  # Populate these_unique_results and these_unique_matrices_hashed
+        this_hash = np.array([hash(np.asarray(this_word["mat"]).tobytes())])  # Get a hash for streamlined comparison
         found = False  # We now compare to what we have in these_unique_results so far
-        same_length_comparison = np.equal(this_nd, these_unique_matrices).all(axis=1).all(axis=1)
+        same_length_comparison = np.equal(this_hash, these_unique_matrices_hashed)
         for i, v in enumerate(same_length_comparison):
             if v:  # If we found a match, we add a reference to this one and move on
+                assert np.equal(this_word["mat"], these_unique_results[i]["mat"]).all(), "HASH COLLISION"  # Since we're dealing with such enormous amounts of data, a hash collision is possible. If this ends up being a problem, it won't be hard to get around (we'll just do this check every time we find a probable match), but I'd like to know if it happens first.
                 found = True
                 these_unique_results[i]["refs"].append(this_word["ref"])
                 break  # There is only one match
         if not found:  # If we didn't find it, we create a new entry in our results and also add it to the streamlined data structure
             these_unique_results.append({"mat": this_word["mat"], "refs": [this_word["ref"]]})
-            these_unique_matrices = np.concatenate((these_unique_matrices, np.reshape(this_nd, (1, *this_nd.shape))))  # I think this is inefficient, but I don't see a good alternative (and it's not done with *that* much data)
+            these_unique_matrices_hashed = np.concatenate((these_unique_matrices_hashed, this_hash))  # I think this is inefficient, but I don't see a good alternative (and it's not done with *that* much data)
     unique_results_length.append(these_unique_results)  # Save the per-length results globally (no need to keep the streamlined matrices per length)
 
     for this_result in these_unique_results:  # Now we search the results for shorter lengths and look for matches there
-        this_nd = np.asarray(this_result["mat"])
+        this_hash = np.array([hash(np.asarray(this_result["mat"]).tobytes())])
         found = False
-        existing_comparison = np.equal(this_nd, unique_matrices_all).all(axis=1).all(axis=1)  # We require that unique_matrices_all contain all unique matrices with reduced forms of shorter length
+        existing_comparison = np.equal(this_hash, unique_matrices_hashed)  # We require that unique_matrices_all contain all unique matrices with reduced forms of shorter length
         for i, v in enumerate(existing_comparison):
             if v:
+                assert np.equal(this_result["mat"], unique_results_all[i]["mat"]).all(), "HASH COLLISION 2"  # See above
                 found = True
                 unique_results_all[i]["refs"].extend(this_result["refs"])  # We add the refs of the current length to the list of existing refs (OK that we don't keep this separated by length because it's easy to test a ref for length)
                 break
         if not found:
             unique_results_all.append({"mat": this_result["mat"], "refs": this_result["refs"]})
-            unique_matrices_all.resize((lambda a,b,c: (a+1,b,c))(*unique_matrices_all.shape))  # Expand unique_matrices_all by the amount we need to append to it (trying to avoid using the global keyword)
-            unique_matrices_all[unique_matrices_all.shape[0]-1, :, :] = this_nd  # Same efficiency concerns as above; we're basically appending in-place
+            unique_matrices_hashed.resize((unique_matrices_hashed.shape[0]+1))  # Expand unique_matrices_all by the amount we need to append to it (trying to avoid using the global keyword)
+            unique_matrices_hashed[unique_matrices_hashed.shape[0]-1] = this_hash  # Same efficiency concerns as above; we're basically appending in-place
 
     t2 = time.perf_counter()
     timers["analysis_time"] += t2-t1
