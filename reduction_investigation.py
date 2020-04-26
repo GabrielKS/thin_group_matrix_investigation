@@ -3,14 +3,21 @@ import conversion
 import time
 import copy
 import math
+import atexit
+import os
+import pickle
 
 # SETTINGS
-max_length = 15
-print_times_length = False
+max_length = 20  # Maximum word length to examine
+print_times_length = True  # Whether or not to print how much time the steps take
+min_length_to_save = 14  # Minimum length to save the output files every iteration
+output_dir = "output"  # Output folder name
 
 # INTERMEDIATE DATA STRUCTURES
 words = [None]  # Element 0 of words is None. Element i of words for i>0 is a dictionary containing information about the word corresponding to that index
 timers = {"population_time": 0, "analysis_time": 0, "summarization_time": 0}
+log_strings = {"population_time": "", "analysis_time": "", "summarization_time": "", "results_summary": ""}
+states = {"length_calculated": -1}
 unique_matrices_all = np.empty((0,3,3))  # All the matrices in unique_results_all but in 3D form, for faster computation
 
 # OUTPUT DATA STRUCTURES
@@ -18,20 +25,12 @@ unique_results_all = []  # Array of dictionaries per unique matrix {"mat": NumPy
 unique_results_length = []  # Similar to unique_results_all but one for each length, where the entries for each length do not contain any references to words of other lengths
 
 def main():
+    atexit.register(save_output)  # Save output whenever the program exits
     for length in range(max_length+1):
         populate(length)
         analyze(length)
         summarize(length)
-        # time.sleep(1.5)
-        print()
-    print()
-    print("Total population time: "+str(timers["population_time"]))
-    print("Total analysis time: "+str(timers["analysis_time"]))
-    print("Total summarization time: "+str(timers["summarization_time"]))
-    print()
-    with open("output.txt", "w") as output_file:
-        output_file.write("\n".join([str(r["refs"]) for r in unique_results_all]))
-
+        if length >= min_length_to_save: save_output()
 
 def populate(length):  # Populate words with all the words of length length, assuming populate(length-1) has already been called for all shorter length
     t1 = time.perf_counter()
@@ -45,7 +44,7 @@ def populate(length):  # Populate words with all the words of length length, ass
     
     t2 = time.perf_counter()
     timers["population_time"] += t2-t1
-    if print_times_length: print("Population time (length="+str(length)+"): "+str(t2-t1))
+    log(format_ratio("Population time (length="+str(length)+")", t2-t1, timers["population_time"]), "population_time", print_times_length)
 
 def analyze(length):  # Analyze words of length length, assuming analyze(length-1) has already been called for all shorter lengths but not this one
     t1 = time.perf_counter()
@@ -85,7 +84,7 @@ def analyze(length):  # Analyze words of length length, assuming analyze(length-
 
     t2 = time.perf_counter()
     timers["analysis_time"] += t2-t1
-    if print_times_length: print("Analysis time (length="+str(length)+"): "+str(t2-t1))
+    log(format_ratio("Analysis time (length="+str(length)+")", t2-t1, timers["analysis_time"]), "analysis_time", print_times_length)
 
 def summarize(length):  # Computes summary statistics for words of length length and all words up to length length. Prepare for lots of dense one-liners.
     t1 = time.perf_counter()
@@ -143,18 +142,51 @@ def summarize(length):  # Computes summary statistics for words of length length
                 for ref in this_result["refs"]]))
         for this_result in unique_results_all])  # A word is reduced nonunique if it has the same length as the canonically reduced form of its matrix, if that is length length, and it is not the only one to satisfy this property
 
+    states["length_calculated"] = length
+
     t2 = time.perf_counter()
     timers["summarization_time"] += t2-t1
-    if print_times_length:
-        print("Summarization time (length="+str(length)+"): "+str(t2-t1))
-        print()
+    log(format_ratio("Summarization time (length="+str(length)+")", t2-t1, timers["summarization_time"]), "summarization_time", print_times_length)
+    if print_times_length: print()
     
-    print("Length "+str(length)+":")
-    print_labeled_ratio("Total", total_words_length, total_words_all)
-    print_labeled_ratio("Reduced", reduced_words_length, reduced_words_all)
-    print_labeled_ratio("Same-length unique", same_length_unique_length, same_length_unique_all)
-    print_labeled_ratio("Same-and-shorter unique", same_and_shorter_unique_length, same_and_shorter_unique_all)
-    print_labeled_ratio("Reduced nonunique", reduced_nonunique_length, reduced_nonunique_all)
+    log("Length "+str(length)+":", "results_summary")
+    log(format_ratio("Total", total_words_length, total_words_all), "results_summary")
+    log(format_ratio("Reduced", reduced_words_length, reduced_words_all), "results_summary")
+    log(format_ratio("Same-length unique", same_length_unique_length, same_length_unique_all), "results_summary")
+    log(format_ratio("Same-and-shorter unique", same_and_shorter_unique_length, same_and_shorter_unique_all), "results_summary")
+    log(format_ratio("Reduced nonunique", reduced_nonunique_length, reduced_nonunique_all), "results_summary")
+    log("", "results_summary")
+
+def save_output():
+    # Put together the text output
+    output_log = "length_calculated="+str(states["length_calculated"])+"\n\n"+"\n\n".join(["LOG "+log_string_key+":\n"+log_strings[log_string_key] for log_string_key in log_strings])
+    output_results_all = results_to_string(unique_results_all, "all")
+    output_results_length = "\n\n".join([results_to_string(unique_result_length, "length="+str(i)) for i, unique_result_length in enumerate(unique_results_length)])
+
+    # Write the text output
+    write_output(output_log, "output_log.txt")
+    write_output(output_results_all, "output_results_all.txt")
+    write_output(output_results_length, "output_results_length.txt")
+
+    # Pickle the important variables so they can be further analyzed programmatically
+    pickle_data(unique_results_all, "results_all.pickle")
+    pickle_data(unique_results_all, "results_length.pickle")
+
+def write_output(output, filename):
+    with open(os.path.join(output_dir, filename), "w") as output_file:
+        output_file.write(output)
+
+def pickle_data(data, filename):
+    with open(os.path.join(output_dir, filename), "wb") as data_file:
+        pickle.dump(data, data_file)
+
+def results_to_string(results, label):
+    matrices = "MATRICES ("+label+"):\n"
+    refs = "REFS ("+label+"):\n"
+    for i, result in enumerate(results):
+        matrices += str(i+1)+" (CRR="+str(result["refs"][0])+"):\n"+str(result["mat"])+"\n"  # CRR: canonical reduced ref(erence)
+        refs += str(i+1)+": "+str(result["refs"])+"\n"
+    return matrices+"\n"+refs
 
 def count_true(arr):  # Count the number of True values in a boolean array
     return np.count_nonzero(arr)
@@ -165,8 +197,12 @@ def length_to_ref(length):  # The first reference to a word of length length wil
 def ref_to_length(ref):  # The length of the word represented by ref
     return int(math.log2(ref))  # Clearer than messing around with bits
 
-def print_labeled_ratio(label, num, denom):  # Nicely prints a label and a ratio
-    print(label+": "+str(num)+"/"+str(denom))
+def format_ratio(label, num, denom):  # Nicely formats a label and a ratio
+    return label+": "+str(num)+"/"+str(denom)
+
+def log(output, log_string, print_output=True):
+    if print_output: print(output)
+    log_strings[log_string] += output+"\n"
 
 if __name__ == "__main__":
     main()
