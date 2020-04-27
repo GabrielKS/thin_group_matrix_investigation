@@ -42,26 +42,22 @@ def bin_to_int(b):
     a = np.array([int(d) for d in list(b)])
     return a.dot(2**np.arange(a.size)[::-1])
 
-def bin_to_h_unreduced(b):
+def bin_to_h_unreduced(b, alphabet=True):
     b = b.lstrip("0")  # Remove any leading zeroes
     if len(b) == 0: return None
     b = b[1:]  # Remove the leading 1
-    result = ""
-    for digit in b:
-        result += ("A" if digit == "0" else "B")
-    return result
+    if alphabet: b = b.replace("0", "A").replace("1", "B")
+    return b
 
-def h_to_bin_unreduced(s):
-    result = "1"
-    for factor in s:
-        result += ("0" if factor == "A" else "1")
-    return result
+def h_to_bin_unreduced(s, alphabet=True):
+    if alphabet: s = s.replace("A", "0").replace("B", "1")
+    return "1"+s
 
-def int_to_h(n):
-    return bin_to_h_unreduced(int_to_bin(n))
+def int_to_h(n, alphabet=True):
+    return bin_to_h_unreduced(int_to_bin(n), alphabet)
 
-def h_to_int(s):
-    return bin_to_int(h_to_bin_unreduced(s))
+def h_to_int(s, alphabet=True):
+    return bin_to_int(h_to_bin_unreduced(s, alphabet))
 
 def bin_to_h_reduced(b):  # Turns out this doesn't work.
     b = b.lstrip("0")  # Remove any leading zeroes
