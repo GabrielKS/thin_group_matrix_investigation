@@ -55,6 +55,7 @@ def analyze(length):  # Analyze words of length length, assuming analyze(length-
     these_unique_results = []
     these_unique_matrices_hashed = np.empty((0))
     t_pop = 0
+    t_ana = 0
 
     for ref in range(start_ref, end_ref):  # Populate these_unique_results and these_unique_matrices_hashed
         t_pop_1 = time.perf_counter()
@@ -64,28 +65,28 @@ def analyze(length):  # Analyze words of length length, assuming analyze(length-
         this_hash = np.array([hash(np.asarray(mat).tobytes())])  # Get a hash for streamlined comparison
         found = False  # We now compare to what we have in these_unique_results so far
         same_length_comparison = np.equal(this_hash, these_unique_matrices_hashed)
-        for i, v in enumerate(same_length_comparison):
-            if v:  # If we found a match, we add a reference to this one and move on
-                assert np.equal(mat, these_unique_results[i]["mat"]).all(), "HASH COLLISION"  # Since we're dealing with such enormous amounts of data, a hash collision is possible. If this ends up being a problem, it won't be hard to get around (we'll just do this check every time we find a probable match), but I'd like to know if it happens first.
-                found = True
-                these_unique_results[i]["refs"].append(ref)
-                break  # There is only one match
-        if not found:  # If we didn't find it, we create a new entry in our results and also add it to the streamlined data structure
+        i = None if len(same_length_comparison) == 0 else (lambda x: None if x == 0 and not same_length_comparison[0] else x)(np.argmax(same_length_comparison))
+        t_ana_1 = time.perf_counter()
+        if i is not None:  # If we found a match, we add a reference to this one and move on
+            assert np.equal(mat, these_unique_results[i]["mat"]).all(), "HASH COLLISION"  # Since we're dealing with such enormous amounts of data, a hash collision is possible. If this ends up being a problem, it won't be hard to get around (we'll just do this check every time we find a probable match), but I'd like to know if it happens first.
+            found = True
+            these_unique_results[i]["refs"].append(ref)
+        else:  # If we didn't find it, we create a new entry in our results and also add it to the streamlined data structure
             these_unique_results.append({"mat": mat, "refs": [ref]})
             these_unique_matrices_hashed = np.concatenate((these_unique_matrices_hashed, this_hash))  # I think this is inefficient, but I don't see a good alternative (and it's not done with *that* much data)
+        t_ana += time.perf_counter()-t_ana_1
     unique_results_length.append(these_unique_results)  # Save the per-length results globally (no need to keep the streamlined matrices per length)
 
     for this_result in these_unique_results:  # Now we search the results for shorter lengths and look for matches there
         this_hash = np.array([hash(np.asarray(this_result["mat"]).tobytes())])
         found = False
         existing_comparison = np.equal(this_hash, unique_matrices_hashed)  # We require that unique_matrices_all contain all unique matrices with reduced forms of shorter length
-        for i, v in enumerate(existing_comparison):
-            if v:
-                assert np.equal(this_result["mat"], unique_results_all[i]["mat"]).all(), "HASH COLLISION 2"  # See above
-                found = True
-                unique_results_all[i]["refs"].extend(this_result["refs"])  # We add the refs of the current length to the list of existing refs (OK that we don't keep this separated by length because it's easy to test a ref for length)
-                break
-        if not found:
+        i = None if len(existing_comparison) == 0 else (lambda x: None if x == 0 and not existing_comparison[0] else x)(np.argmax(existing_comparison))
+        if i is not None:
+            assert np.equal(this_result["mat"], unique_results_all[i]["mat"]).all(), "HASH COLLISION 2"  # See above
+            found = True
+            unique_results_all[i]["refs"].extend(this_result["refs"])  # We add the refs of the current length to the list of existing refs (OK that we don't keep this separated by length because it's easy to test a ref for length)
+        else:
             unique_results_all.append({"mat": this_result["mat"], "refs": this_result["refs"]})
             unique_matrices_hashed.resize((unique_matrices_hashed.shape[0]+1))  # Expand unique_matrices_all by the amount we need to append to it (trying to avoid using the global keyword)
             unique_matrices_hashed[unique_matrices_hashed.shape[0]-1] = this_hash  # Same efficiency concerns as above; we're basically appending in-place
@@ -96,6 +97,7 @@ def analyze(length):  # Analyze words of length length, assuming analyze(length-
     t2 = time.perf_counter()
     timers["analysis_time"] += t2-t1-t_pop
     log(format_ratio("Analysis time (length="+str(length)+")", t2-t1-t_pop, timers["analysis_time"]), "analysis_time", print_times_length)
+    print(t_ana)
 
 def summarize(length):  # Computes summary statistics for words of length length and all words up to length length. Prepare for lots of dense one-liners.
     t1 = time.perf_counter()
