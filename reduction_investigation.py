@@ -8,7 +8,7 @@ import os
 import pickle
 
 # OUTPUT SETTINGS
-max_length = 30  # Maximum word length to examine
+max_length = 20  # Maximum word length to examine
 print_times_length = True  # Whether or not to print how much time the steps take
 min_length_to_save = 15  # Minimum length to save the output files every iteration
 output_dir = "output"  # Output folder name
@@ -198,15 +198,6 @@ def results_to_string(results, label):
         matrices += str(i+1)+" (CRR="+str(result["refs"][0])+"):\n"+str(result["mat"])+"\n"  # CRR: canonical reduced ref(erence)
         refs += str(i+1)+": "+str(result["refs"])+"\n"
     return matrices+"\n"+refs
-
-def count_true(arr):  # Count the number of True values in a boolean array
-    return np.count_nonzero(arr)
-
-def length_to_ref(length):  # The first reference to a word of length length will be at length_to_ref(length). Also, the number of words of length length will be length_to_ref(length).
-    return 2**length
-
-def ref_to_length(ref):  # The length of the word represented by ref
-    return int(math.log2(ref))  # Clearer than messing around with bits
 
 def format_ratio(label, num, denom):  # Nicely formats a label and a ratio
     return label+": "+str(num)+"/"+str(denom)

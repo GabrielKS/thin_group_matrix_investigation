@@ -1,3 +1,4 @@
+from common import *
 import os
 import pickle
 
@@ -6,23 +7,38 @@ unique_results_all = None
 unique_results_length = None
 
 def main():
-    load("output")
+    load("output copy")
     print(max_length)
     # print(unique_results_all)
     # print(unique_results_length)
+    for m in matrices_of_least_entries():
+        print(str(m)+"\n")
 
 def load(output_dir):
     global max_length, unique_results_all, unique_results_length
     with open(os.path.join(output_dir, "output_log.txt")) as output_log:
         max_length = int(output_log.readline().split("=")[1])
     unique_results_all = unpickle_data(os.path.join(output_dir, "results_all.pickle"))
-    unique_results_length = unpickle_data(os.path.join(output_dir, "results_length.pickle"))
+    # unique_results_length = unpickle_data(os.path.join(output_dir, "results_length.pickle"))
 
 def unpickle_data(filename):
     data = None
     with open(filename, "rb") as data_file:
         data = pickle.load(data_file)
     return data
+
+def matrices_of_least_entries():
+    results = []
+    for i in range(max_length):
+        least_entries = [None]*9
+        for entry in unique_results_all:
+            if ref_to_length(entry["refs"][0]) == i:
+                these_entries = entry["mat"].reshape(1, 9).tolist()[0]
+                for j in range(9):
+                    if least_entries[j] is None or abs(these_entries[j]) < abs(least_entries[j]):
+                        least_entries[j] = abs(these_entries[j])
+        results.append(np.matrix(least_entries).reshape(3,3))
+    return results
 
 if __name__ == "__main__":
     main()
