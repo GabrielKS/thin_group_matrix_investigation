@@ -207,9 +207,15 @@ def log(output, log_string, print_output=True):
     log_strings[log_string] += output+"\n"
 
 def int_to_mat_cached(ref):
-    h = conversion.int_to_h(ref, alphabet=False)  # TODO do this more mathematically if it's a major source of slowdown
-    ref1 = conversion.h_to_int(h[:cache_length], alphabet=False)
-    ref2 = conversion.h_to_int(h[cache_length:], alphabet=False)
+    # h = conversion.int_to_h(ref, alphabet=False)  # TODO do this more mathematically if it's a major source of slowdown
+    # ref1 = conversion.h_to_int(h[:cache_length], alphabet=False)
+    # ref2 = conversion.h_to_int(h[cache_length:], alphabet=False)
+    ref1 = ref_first_n(ref, cache_length)
+    ref2 = ref_last_n(ref, cache_length)
+    # print(ref)
+    # print(ref1)
+    # print(ref2)
+    # print()
     return words_cache[ref1]*words_cache[ref2]
 
 if __name__ == "__main__":
