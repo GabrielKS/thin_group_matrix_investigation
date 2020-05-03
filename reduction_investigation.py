@@ -6,11 +6,12 @@ import math
 import atexit
 import os
 import pickle
+from numba import jit
 
 # OUTPUT SETTINGS
 max_length = 20  # Maximum word length to examine
 print_times_length = True  # Whether or not to print how much time the steps take
-min_length_to_save = 15  # Minimum length to save the output files every iteration
+min_length_to_save = 17  # Minimum length to save the output files every iteration
 output_dir = "output"  # Output folder name
 
 # INTERMEDIATE SETTINGS
@@ -63,28 +64,22 @@ def analyze(length):  # Analyze words of length length, assuming analyze(length-
         t_pop += time.perf_counter()-t_pop_1
 
         this_hash = np.array([hash(np.asarray(mat).tobytes())])  # Get a hash for streamlined comparison
-        found = False  # We now compare to what we have in these_unique_results so far
-        same_length_comparison = np.equal(this_hash, these_unique_matrices_hashed)
-        i = None if len(same_length_comparison) == 0 else (lambda x: None if x == 0 and not same_length_comparison[0] else x)(np.argmax(same_length_comparison))
         t_ana_1 = time.perf_counter()
-        if i is not None:  # If we found a match, we add a reference to this one and move on
+        i = find_first_equal(this_hash, these_unique_matrices_hashed)  # We now compare to what we have in these_unique_results so far
+        t_ana += time.perf_counter()-t_ana_1
+        if i >= 0:  # If we found a match, we add a reference to this one and move on
             assert np.equal(mat, these_unique_results[i]["mat"]).all(), "HASH COLLISION"  # Since we're dealing with such enormous amounts of data, a hash collision is possible. If this ends up being a problem, it won't be hard to get around (we'll just do this check every time we find a probable match), but I'd like to know if it happens first.
-            found = True
             these_unique_results[i]["refs"].append(ref)
         else:  # If we didn't find it, we create a new entry in our results and also add it to the streamlined data structure
             these_unique_results.append({"mat": mat, "refs": [ref]})
             these_unique_matrices_hashed = np.concatenate((these_unique_matrices_hashed, this_hash))  # I think this is inefficient, but I don't see a good alternative (and it's not done with *that* much data)
-        t_ana += time.perf_counter()-t_ana_1
     unique_results_length.append(these_unique_results)  # Save the per-length results globally (no need to keep the streamlined matrices per length)
 
     for this_result in these_unique_results:  # Now we search the results for shorter lengths and look for matches there
         this_hash = np.array([hash(np.asarray(this_result["mat"]).tobytes())])
-        found = False
-        existing_comparison = np.equal(this_hash, unique_matrices_hashed)  # We require that unique_matrices_all contain all unique matrices with reduced forms of shorter length
-        i = None if len(existing_comparison) == 0 else (lambda x: None if x == 0 and not existing_comparison[0] else x)(np.argmax(existing_comparison))
-        if i is not None:
+        i = find_first_equal(this_hash, unique_matrices_hashed)  # We require that unique_matrices_all contain all unique matrices with reduced forms of shorter length
+        if i >= 0:
             assert np.equal(this_result["mat"], unique_results_all[i]["mat"]).all(), "HASH COLLISION 2"  # See above
-            found = True
             unique_results_all[i]["refs"].extend(this_result["refs"])  # We add the refs of the current length to the list of existing refs (OK that we don't keep this separated by length because it's easy to test a ref for length)
         else:
             unique_results_all.append({"mat": this_result["mat"], "refs": this_result["refs"]})
@@ -219,6 +214,14 @@ def int_to_mat_cached(ref):
     # print(ref2)
     # print()
     return words_cache[ref1]*words_cache[ref2]
+
+@jit(nopython=True)
+def find_first_equal(elem, elem_list):  # Returns the index of the first value of elem_list equal to elem, or -1 if there is no match
+        same_length_comparison = np.equal(elem, elem_list)  # TODO: Compare for the first 1000 or so of elem_list first, because disproportionately many matches will occur there
+        if len(same_length_comparison) == 0: return -1
+        first = np.argmax(same_length_comparison)
+        if first == 0 and not same_length_comparison[0]: return -1
+        return first
 
 if __name__ == "__main__":
     main()
