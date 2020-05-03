@@ -7,7 +7,7 @@ unique_results_all = None
 unique_results_length = None
 
 def main():
-    load("output copy")
+    load("output")
     print(max_length)
     # print(unique_results_all)
     # print(unique_results_length)
@@ -27,7 +27,7 @@ def unpickle_data(filename):
         data = pickle.load(data_file)
     return data
 
-def matrices_of_least_entries():
+def matrices_of_least_entries():    # Returns one matrix per length where each entry is the absolute minimum of the entries in that spot in all the matrices of that length
     results = []
     for i in range(max_length):
         least_entries = [None]*9
