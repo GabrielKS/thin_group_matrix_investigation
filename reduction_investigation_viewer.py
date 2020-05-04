@@ -7,9 +7,28 @@ unique_results_length = None
 
 def main():
     load("output")
-    print(max_length)
+    # print(max_length)
     # print(unique_results_all)
     # print(unique_results_length)
+    findEntry(15,1)
+
+def findEntry(length, entry):
+    found = False
+    for i in range (len(unique_results_all)):
+        crr = unique_results_all[i]["refs"][0]
+        matrix = unique_results_all[i]["mat"]
+        if crr >= 2**length and crr < 2**(length+1):
+            if found:
+                break
+            for j in range (0,3):
+                if found:
+                    break
+                for k in range (0,3):
+                    if matrix[j,k] == entry:
+                        print(crr)
+                        print(matrix)
+                        found = True
+                        break
 
 def load(output_dir):
     global max_length, unique_results_all, unique_results_length

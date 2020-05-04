@@ -1,6 +1,13 @@
 from common import *
 
+
 def main():
+    print(int_to_bin(21))
+    print(int_to_h(21))
+    print(h_to_mat(int_to_h(21)))
+    print("done")
+
+    '''
     # Conversion between numbers and binary strings
     print(bin_to_int("1010011"))
     print(int_to_bin(83))
@@ -27,6 +34,7 @@ def main():
     for i in range(2, 100):
         s = bin_to_h_reduced(int_to_bin(i))
         print(str(i).rjust(2)+": "+s)
+    '''
 
 def h_to_mat(s):
     result = I3

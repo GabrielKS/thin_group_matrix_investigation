@@ -1,16 +1,20 @@
 from common import *
 import conversion
 
+output = open("output.txt", "w")
+
 def main():
     # for m in gen_mod_mat(3): print(m)
+
     results = universal_modulo_test()
     print("We have results!")
     # print(results)
     universal_modulo_output(results, print_matrices=True)
+    output.close()
 
 
 def universal_modulo_test(skip_bottom=False):  # Highly inefficient. For one thing, the loops could be cleaned up and some advantage could probably be taken of NumPy's lower-level loops; for another, this workflow requires storing everything in memory between when it is calculated and when it is interpreted.
-    times = 1000  # How many matrices to test (increasing this will make things slower linearly)
+    times = 10000  # How many matrices to test (increasing this will make things slower linearly)
     h_length = 10  # How long to make the word (increasing this will make things slower roughly linearly)
     max_mod = 2  # Maximum modulo to test (increasing this will make things slower *very very exponentially*)
     results = [{}]*(max_mod-1)  # Results is an array of dictionaries. The array index corresponds to 2 minus the mod under consideration (0 means mod 2, 1 means mod 3, etc.). The dictionary key is a matrix of ints >= 0 and < the mod under consideration. The dictionary value is a word that generates the key when turned into a matrix and taken mod the mod under consideration.
@@ -41,10 +45,10 @@ def universal_modulo_output(results, skip_bottom=False, print_matrices=False):
             # I'm not even processing the bottom row anymore. But this is the spot to add any subtler rules we find so we can filter the output down to things we care about.
 
             if found:
-                if print_matrices: print("found mod "+str(mod)+":\n"+str(mod_mat[0:2,:] if skip_bottom else mod_mat)+"\n")
+                if print_matrices: print("found mod "+str(mod)+":\n"+str(mod_mat[0:2,:] if skip_bottom else mod_mat)+"\n", file = output)
                 found_count += 1
             else:
-                if print_matrices: print("NOT FOUND mod "+str(mod)+":\n"+str(mod_mat[0:2,:] if skip_bottom else mod_mat)+"\n")
+                if print_matrices: print("NOT FOUND mod "+str(mod)+":\n"+str(mod_mat[0:2,:] if skip_bottom else mod_mat)+"\n", file = output)
                 not_found_count += 1
         print("total found in mod "+str(mod)+": "+str(found_count))
         print("total NOT FOUND in mod "+str(mod)+": "+str(not_found_count))
