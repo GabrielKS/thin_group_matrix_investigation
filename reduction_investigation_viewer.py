@@ -11,8 +11,15 @@ def main():
     print(max_length)
     # print(unique_results_all)
     # print(unique_results_length)
-    for m in matrices_of_least_entries():
-        print(str(m)+"\n")
+
+    # for m in matrices_of_least_entries():
+    #     print(str(m)+"\n")
+
+    # for i, result in enumerate(unique_results_all):
+    #     if len(result["refs"]) > 300: print(str(i)+": "+str(len(result["refs"])))
+
+    print(length_to_ref(max_length+1)-1)
+    print(sum([len(unique_results_all[i]["refs"]) for i in range(len(unique_results_all))]))
 
 def load(output_dir):
     global max_length, unique_results_all, unique_results_length
