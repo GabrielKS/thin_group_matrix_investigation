@@ -28,11 +28,17 @@ def main():
         s = bin_to_h_reduced(int_to_bin(i))
         print(str(i).rjust(2)+": "+s)
 
-def h_to_mat(s):
+def h_to_mat(s, mod=0):
+    mA = A
+    mB = B
+    if mod > 1:
+        mA %= mod
+        mB %= mod
     result = I3
     for i in range(len(s)):
-        m = A if s[i] == "A" else B
+        m = mA if s[i] == "A" else mB
         result = result*m
+        if mod > 1: result %= mod
     return result
 
 def int_to_bin(n):

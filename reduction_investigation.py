@@ -10,9 +10,12 @@ from numba import jit
 
 # OUTPUT SETTINGS
 max_length = 20  # Maximum word length to examine
+modulo = 0  # 0 for non-modular arithmetic, >1 to multiply and compare matrices using modular arithmetic
 print_times_length = True  # Whether or not to print how much time the steps take
 min_length_to_save = 17  # Minimum length to save the output files every iteration
-output_dir = "output"  # Output folder name
+mod_str = "_mod_"+str(modulo) if modulo > 1 else ""
+output_dir = "output"+mod_str  # Output folder name
+write_files = True  # Whether or not to save output to files
 
 # INTERMEDIATE SETTINGS
 cache_length = math.ceil(max_length/2)
@@ -44,7 +47,7 @@ def populate(length):  # Populate words with all the words of length length, ass
     assert len(words_cache) == length_to_ref(length)
     these_words = [None for i in range(length_to_ref(length))]
     for i in range(0, length_to_ref(length)):
-        these_words[i] = conversion.h_to_mat(conversion.int_to_h(length_to_ref(length)+i))
+        these_words[i] = conversion.h_to_mat(conversion.int_to_h(length_to_ref(length)+i), mod=modulo)
     words_cache.extend(these_words)
     
     t2 = time.perf_counter()
@@ -60,7 +63,7 @@ def analyze(length):  # Analyze words of length length, assuming analyze(length-
 
     for ref in range(start_ref, end_ref):  # Populate these_unique_results and these_unique_matrices_hashed
         t_pop_1 = time.perf_counter()
-        mat = int_to_mat_cached(ref)
+        mat = int_to_mat_cached(ref, mod=modulo)
         t_pop += time.perf_counter()-t_pop_1
 
         this_hash = np.array([hash(np.asarray(mat).tobytes())])  # Get a hash for streamlined comparison
@@ -166,10 +169,19 @@ def summarize(length):  # Computes summary statistics for words of length length
     log("", "results_summary")
 
 def save_output():
+    if not write_files: return
+    
     # Put together the text output
-    output_log = "length_calculated="+str(states["length_calculated"])+"\n\n"+"\n\n".join(["LOG "+log_string_key+":\n"+log_strings[log_string_key] for log_string_key in log_strings])
+    output_log = "length_calculated="+str(states["length_calculated"])+"\n"
+    output_log += "modulo=" + (str(modulo) if modulo > 1 else "NONE")
+    output_log += "\n\n"
+    output_log += "\n\n".join(["LOG "+log_string_key+":\n"+log_strings[log_string_key] for log_string_key in log_strings])
     output_results_all = results_to_string(unique_results_all, "all")
     output_results_length = "\n\n".join([results_to_string(unique_result_length, "length="+str(i)) for i, unique_result_length in enumerate(unique_results_length)])
+
+    # Create the output folder if necessary
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
     # Write the text output
     write_output(output_log, "output_log.txt")
@@ -203,7 +215,7 @@ def log(output, log_string, print_output=True):
     if print_output: print(output)
     log_strings[log_string] += output+"\n"
 
-def int_to_mat_cached(ref):
+def int_to_mat_cached(ref, mod=0):
     # h = conversion.int_to_h(ref, alphabet=False)  # TODO do this more mathematically if it's a major source of slowdown
     # ref1 = conversion.h_to_int(h[:cache_length], alphabet=False)
     # ref2 = conversion.h_to_int(h[cache_length:], alphabet=False)
@@ -213,10 +225,15 @@ def int_to_mat_cached(ref):
     # print(ref1)
     # print(ref2)
     # print()
-    return words_cache[ref1]*words_cache[ref2]
+    result = words_cache[ref1]*words_cache[ref2]
+    if mod > 1: result %= mod
+    return result
 
 @jit(nopython=True)
 def find_first_equal(elem, elem_list):  # Returns the index of the first value of elem_list equal to elem, or -1 if there is no match
+        # for i in range(len(elem_list)):  # TODO: figure out why this way doesn't work
+        #     if elem == elem_list[i]: return i
+        # return -1
         same_length_comparison = np.equal(elem, elem_list)  # TODO: Compare for the first 1000 or so of elem_list first, because disproportionately many matches will occur there
         if len(same_length_comparison) == 0: return -1
         first = np.argmax(same_length_comparison)
