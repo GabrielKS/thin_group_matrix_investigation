@@ -2,9 +2,10 @@ from common import *
 
 
 def main():
-    print(int_to_bin(21))
-    print(int_to_h(21))
-    print(h_to_mat(int_to_h(21)))
+    #print(int_to_bin(21))
+    print(int_to_h(76695844))
+    print(h_to_mat(int_to_h(76695844)))
+    #print(h_to_mat(int_to_h(21)))
     print("done")
 
     '''
