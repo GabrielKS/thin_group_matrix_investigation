@@ -46,7 +46,7 @@ def h_to_mat(s, mod=0):
     result = I3
     for i in range(len(s)):
         m = mA if s[i] == "A" else mB
-        result = result*m
+        result = result@m
         if mod > 1: result %= mod
     return result
 

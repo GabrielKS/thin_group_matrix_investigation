@@ -12,16 +12,16 @@ import numba
 max_length = 20  # Maximum word length to examine
 modulo = 0  # 0 for non-modular arithmetic, >1 to multiply and compare matrices using modular arithmetic
 print_times_length = True  # Whether or not to print how much time the steps take
-min_length_to_save = 17  # Minimum length to save the output files every iteration
+min_length_to_save = 19  # Minimum length to save the output files every iteration
 mod_str = "_mod_"+str(modulo) if modulo > 1 else ""
 output_dir = "output"+mod_str  # Output folder name
-write_files = True  # Whether or not to save output to files
+write_files = False  # Whether or not to save output to files
 
 # INTERMEDIATE SETTINGS
 cache_length = math.ceil(max_length/2)
 
 # INTERMEDIATE DATA STRUCTURES
-words_cache = [None]  # Element 0 of words is None. Element i of words for i>0 is a dictionary containing information about the word corresponding to that index
+words_cache = np.zeros((length_to_ref(cache_length+1), 3, 3), dtype=dtype)  # Element 0 of words is a 3x3 array of zeroes, a stand-in for None. Element i of words for i>0 is the matrix corresponding to ref i
 timers = {"population_time": 0, "analysis_time": 0, "summarization_time": 0}
 log_strings = {"population_time": "", "analysis_time": "", "summarization_time": "", "results_summary": ""}
 states = {"length_calculated": -1}
@@ -41,16 +41,10 @@ def main():
         summarize(length)
         if length >= min_length_to_save: save_output()
 
+# @numba.jit(nopython=True)  # TODO: Numba-ify this -- involves Numba-ifying (or most likely working around) h_to_mat -- low priority as it is not a bottleneck
 def populate(length):  # Populate words with all the words of length length, assuming populate(length-1) has already been called for all shorter length
-    t1 = time.perf_counter()
-
-    assert len(words_cache) == length_to_ref(length)
-    these_words = [None for i in range(length_to_ref(length))]
-    for i in range(0, length_to_ref(length)):
-        these_words[i] = conversion.h_to_mat(conversion.int_to_h(length_to_ref(length)+i), mod=modulo)
-    words_cache.extend(these_words)
-    
-    t2 = time.perf_counter()
+    for i in range(length_to_ref(length), length_to_ref(length+1)):
+        words_cache[i,:,:] = conversion.h_to_mat(conversion.int_to_h(i), mod=modulo)
 
 def analyze(length):  # Analyze words of length length, assuming analyze(length-1) has already been called for all shorter lengths but not this one
     t1 = time.perf_counter()
@@ -63,7 +57,7 @@ def analyze(length):  # Analyze words of length length, assuming analyze(length-
 
     for ref in range(start_ref, end_ref):  # Populate these_unique_results and these_unique_matrices_hashed
         t_pop_1 = time.perf_counter()
-        mat = int_to_mat_cached(ref, mod=modulo)
+        mat = int_to_mat_cached(words_cache, ref, mod=modulo)
         t_pop += time.perf_counter()-t_pop_1
 
         this_hash = hash(np.asarray(mat).tobytes())  # Get a hash for streamlined comparison
@@ -215,17 +209,11 @@ def log(output, log_string, print_output=True):
     if print_output: print(output)
     log_strings[log_string] += output+"\n"
 
-def int_to_mat_cached(ref, mod=0):
-    # h = conversion.int_to_h(ref, alphabet=False)  # TODO do this more mathematically if it's a major source of slowdown
-    # ref1 = conversion.h_to_int(h[:cache_length], alphabet=False)
-    # ref2 = conversion.h_to_int(h[cache_length:], alphabet=False)
+@numba.jit(numba_dtype[:,:](numba_dtype[:,:,:], numba_dtype, numba_dtype), nopython=True)
+def int_to_mat_cached(words_cache, ref, mod=0):
     ref1 = ref_first_n(ref, cache_length)
     ref2 = ref_last_n(ref, cache_length)
-    # print(ref)
-    # print(ref1)
-    # print(ref2)
-    # print()
-    result = words_cache[ref1]*words_cache[ref2]
+    result = multiply_3x3(words_cache[ref1,:,:], words_cache[ref2,:,:])
     if mod > 1: result %= mod
     return result
 
