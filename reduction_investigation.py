@@ -15,17 +15,18 @@ print_times_length = True  # Whether or not to print how much time the steps tak
 min_length_to_save = 19  # Minimum length to save the output files every iteration
 mod_str = "_mod_"+str(modulo) if modulo > 1 else ""
 output_dir = "output"+mod_str  # Output folder name
-write_files = False  # Whether or not to save output to files
+write_files = True  # Whether or not to save output to files
 
 # INTERMEDIATE SETTINGS
 cache_length = math.ceil(max_length/2)
 
 # INTERMEDIATE DATA STRUCTURES
 words_cache = np.zeros((length_to_ref(cache_length+1), 3, 3), dtype=dtype)  # Element 0 of words is a 3x3 array of zeroes, a stand-in for None. Element i of words for i>0 is the matrix corresponding to ref i
-timers = {"population_time": 0, "analysis_time": 0, "summarization_time": 0}
-log_strings = {"population_time": "", "analysis_time": "", "summarization_time": "", "results_summary": ""}
+timers = {"analysis_time": 0, "summarization_time": 0}
+log_strings = {"analysis_time": "", "summarization_time": "", "results_summary": ""}
 states = {"length_calculated": -1}
-unique_matrices_hashed = np.array([0])  # A list of the hashes of all the matrices in unique_results_all, for faster computation. We initialize with an entry because Numba doesn't like empty arrays.
+unique_matrices = np.array([O3])  # A list of all the matrices in unique_results_all, for faster computation. We initialize with an entry because Numba doesn't like empty arrays.
+unique_matrices_hashed = np.array([0])  # A hashed version of unique_matrices, for even faster computation
 
 # OUTPUT DATA STRUCTURES
 unique_results_all = []  # Array of dictionaries per unique matrix {"mat": NumPy_matrix_representing_this_h, "refs": all_integer_representations_of_this_h}
@@ -37,7 +38,12 @@ def main():
         populate(length)
 
     for length in range(max_length+1):
+        t1 = time.perf_counter()
         analyze(length)
+        t2 = time.perf_counter()
+        timers["analysis_time"] += t2-t1
+        log(format_ratio("Analysis time (length="+str(length)+")", t2-t1, timers["analysis_time"]), "analysis_time", print_times_length)
+
         summarize(length)
         if length >= min_length_to_save: save_output()
 
@@ -47,49 +53,33 @@ def populate(length):  # Populate words with all the words of length length, ass
         words_cache[i,:,:] = conversion.h_to_mat(conversion.int_to_h(i), mod=modulo)
 
 def analyze(length):  # Analyze words of length length, assuming analyze(length-1) has already been called for all shorter lengths but not this one
-    t1 = time.perf_counter()
-    start_ref = length_to_ref(length)
-    end_ref = length_to_ref(length+1)
     these_unique_results = []
-    these_unique_matrices_hashed = np.array([0])  # A list of the hashes of all the matrices in these_unique_results, for faster computation. We initialize with an entry because Numba doesn't like empty arrays.
-    t_pop = 0
-    t_ana = 0
+    these_unique_matrices = np.array([O3])  # A list of all the matrices in these_unique_results, for faster computation. We initialize with an entry because Numba doesn't like empty arrays.
+    these_unique_matrices_hashed = np.array([0])  # A list of all the hashes of these_unique_matrices, for even faster computation
 
-    for ref in range(start_ref, end_ref):  # Populate these_unique_results and these_unique_matrices_hashed
-        t_pop_1 = time.perf_counter()
+    for ref in range(length_to_ref(length), length_to_ref(length+1)):  # Populate these_unique_results and these_unique_matrices_hashed
         mat = int_to_mat_cached(words_cache, ref, mod=modulo)
-        t_pop += time.perf_counter()-t_pop_1
-
-        this_hash = hash(np.asarray(mat).tobytes())  # Get a hash for streamlined comparison
-        t_ana_1 = time.perf_counter()
-        i = find_first_equal(this_hash, these_unique_matrices_hashed)-1  # We now compare to what we have in these_unique_results so far. Subtract one because we added element 0 manually.
-        t_ana += time.perf_counter()-t_ana_1
+        this_hash = mat_hash_3x3(mat)  # Get a hash for streamlined comparison
+        i = find_first_equal_hash(mat, these_unique_matrices, this_hash, these_unique_matrices_hashed)-1  # We now compare to what we have in these_unique_results so far. Subtract one because we added element 0 manually.
         if i >= 0:  # If we found a match, we add a reference to this one and move on
-            assert np.equal(mat, these_unique_results[i]["mat"]).all(), "HASH COLLISION"  # Since we're dealing with such enormous amounts of data, a hash collision is possible. If this ends up being a problem, it won't be hard to get around (we'll just do this check every time we find a probable match), but I'd like to know if it happens first.
             these_unique_results[i]["refs"].append(ref)
         else:  # If we didn't find it, we create a new entry in our results and also add it to the streamlined data structure
             these_unique_results.append({"mat": mat, "refs": [ref]})
-            these_unique_matrices_hashed = np.concatenate((these_unique_matrices_hashed, np.array([this_hash])))  # I think this is inefficient, but I don't see a good alternative (and it's not done with *that* much data)
+            these_unique_matrices = np.concatenate((these_unique_matrices, np.array([mat])))  # I think this is inefficient, but I don't see a good alternative (and it's not done with *that* much data)
+            these_unique_matrices_hashed = np.concatenate((these_unique_matrices_hashed, np.array([this_hash])))
     unique_results_length.append(these_unique_results)  # Save the per-length results globally (no need to keep the streamlined matrices per length)
 
     for this_result in these_unique_results:  # Now we search the results for shorter lengths and look for matches there
-        this_hash = hash(np.asarray(this_result["mat"]).tobytes())
-        i = find_first_equal(this_hash, unique_matrices_hashed)-1  # We require that unique_matrices_all contain all unique matrices with reduced forms of shorter length.  Subtract one because we added element 0 manually.
+        this_hash = mat_hash_3x3(this_result["mat"])
+        i = find_first_equal_hash(this_result["mat"], unique_matrices, this_hash, unique_matrices_hashed)-1  # We require that unique_matrices_all contain all unique matrices with reduced forms of shorter length.  Subtract one because we added element 0 manually.
         if i >= 0:
-            assert np.equal(this_result["mat"], unique_results_all[i]["mat"]).all(), "HASH COLLISION 2"  # See above
             unique_results_all[i]["refs"].extend(this_result["refs"])  # We add the refs of the current length to the list of existing refs (OK that we don't keep this separated by length because it's easy to test a ref for length)
         else:
             unique_results_all.append({"mat": this_result["mat"], "refs": this_result["refs"]})
-            unique_matrices_hashed.resize((unique_matrices_hashed.shape[0]+1))  # Expand unique_matrices_all by the amount we need to append to it (trying to avoid using the global keyword)
-            unique_matrices_hashed[unique_matrices_hashed.shape[0]-1] = this_hash  # Same efficiency concerns as above; we're basically appending in-place
-
-    timers["population_time"] += t_pop
-    log(format_ratio("Population time (length="+str(length)+")", t_pop, timers["population_time"]), "population_time", print_times_length)
-
-    t2 = time.perf_counter()
-    timers["analysis_time"] += t2-t1-t_pop
-    log(format_ratio("Analysis time (length="+str(length)+")", t2-t1-t_pop, timers["analysis_time"]), "analysis_time", print_times_length)
-    print(t_ana)
+            unique_matrices.resize((unique_matrices.shape[0]+1, 3, 3))  # Expand unique_matrices by the amount we need to append to it (trying to avoid using the global keyword)
+            unique_matrices[unique_matrices.shape[0]-1, :, :] = this_result["mat"]  # Same efficiency concerns as above; we're basically appending in-place
+            unique_matrices_hashed.resize((unique_matrices_hashed.shape[0]+1))
+            unique_matrices_hashed[unique_matrices_hashed.shape[0]-1] = this_hash
 
 def summarize(length):  # Computes summary statistics for words of length length and all words up to length length. Prepare for lots of dense one-liners.
     t1 = time.perf_counter()
@@ -217,10 +207,10 @@ def int_to_mat_cached(words_cache, ref, mod=0):
     if mod > 1: result %= mod
     return result
 
-@numba.jit(numba_dtype(numba_dtype, numba_dtype[:]), nopython=True)  # In this case, if we don't manually specify type, Numba actually slows things down.
-def find_first_equal(elem, elem_list):  # Returns the index of the first value of elem_list equal to elem, or -1 if there is no match
-    for i in range(len(elem_list)):
-        if elem == elem_list[i]: return i
+@numba.jit(numba_dtype(numba_dtype[:,:], numba_dtype[:,:,:], numba_dtype, numba_dtype[:]), nopython=True)  # In this case, if we don't manually specify type, Numba actually slows things down.
+def find_first_equal_hash(elem, elem_list, elem_hash, elem_hash_list):  # Returns the index of the first value of elem_list equal to elem, or -1 if there is no match
+    for i in range((len(elem_list))):
+        if elem_hash == elem_hash_list[i] and equals_lazy_3x3(elem, elem_list[i,:,:]): return i
     return -1
 
 if __name__ == "__main__":

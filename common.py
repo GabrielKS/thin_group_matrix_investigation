@@ -65,3 +65,11 @@ def multiply_3x3(a, b):  # Because Numba doesn't natively support matrix multipl
     result[2,2] = a[2,0]*b[0,2]+a[2,1]*b[1,2]+a[2,2]*b[2,2]
 
     return result
+
+@numba.jit(nopython=True)
+def equals_lazy_3x3(a, b):  # Equivalent to np.equal(a, b).all()
+    return a[0,0]==b[0,0] and a[0,1]==b[0,1] and a[0,2]==b[0,2] and a[1,0]==b[1,0] and a[1,1]==b[1,1] and a[1,2]==b[1,2] and a[2,0]==b[2,0] and a[2,1]==b[2,1] and a[2,2]==b[2,2]
+
+@numba.jit(nopython=True)
+def mat_hash_3x3(mat):  # A substitute for hash(mat.tobytes())
+    return hash((mat[0,0], mat[0,1], mat[0,2], mat[1,0], mat[1,1], mat[1,2], mat[2,0], mat[2,1], mat[2,2]))
