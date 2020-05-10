@@ -22,8 +22,15 @@ def random_H(length):
     import conversion
     return conversion.h_to_mat(random_H_str(length))
 
-def count_true(arr):  # Count the number of True values in a boolean array
-    return np.count_nonzero(arr)
+def count_true(arr):
+    return count_true_numba(np.array(arr))  # Numba doesn't like dealing with non-NumPy arrays (TODO: solve this problem better)
+
+@numba.jit(numba_dtype(numba.bool_[:]), nopython=True)
+def count_true_numba(arr):  # Count the number of True values in a boolean array. Substitute for return np.count_nonzero(arr)
+    result = 0
+    for b in arr:
+        if b: result += 1
+    return result
 
 @numba.jit(nopython=True)
 def length_to_ref(length):  # The first reference to a word of length length will be at length_to_ref(length). Also, the number of words of length length will be length_to_ref(length).
