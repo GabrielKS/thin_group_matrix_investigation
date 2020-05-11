@@ -6,7 +6,7 @@ import numba
 dtype = np.int64  # NumPy datatype
 numba_dtype = numba.int64  # Numby datatype
 numba_dtype_str = "int64"
-warning_threshold = 2**30  # Warn us if numbers get this big
+warning_threshold = 2**53  # Warn us if numbers get this big
 
 A = np.array([[1,1,2],[0,1,1],[0,-3,-2]], dtype=dtype)
 B = np.array([[-2,0,-1],[-5,1,-1],[3,0,1]], dtype=dtype)
@@ -80,7 +80,7 @@ def multiply_3x3(a, b):  # Because Numba doesn't natively support matrix multipl
 
 @numba.jit(nopython=True)
 def warn_3x3(a):
-    return a[0,0] >= warning_threshold or a[0,1] >= warning_threshold or a[0,2] >= warning_threshold or a[1,0] >= warning_threshold or a[1,1] >= warning_threshold or a[1,2] >= warning_threshold or a[2,0] >= warning_threshold or a[2,1] >= warning_threshold or a[2,2] >= warning_threshold
+    return abs(a[0,0]) >= warning_threshold or abs(a[0,1]) >= warning_threshold or abs(a[0,2]) >= warning_threshold or abs(a[1,0]) >= warning_threshold or abs(a[1,1]) >= warning_threshold or abs(a[1,2]) >= warning_threshold or abs(a[2,0]) >= warning_threshold or abs(a[2,1]) >= warning_threshold or abs(a[2,2]) >= warning_threshold
 
 @numba.jit(nopython=True)
 def equals_lazy_3x3(a, b):  # Equivalent to np.equal(a, b).all()
