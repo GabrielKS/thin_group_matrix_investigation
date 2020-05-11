@@ -12,6 +12,7 @@ A = np.array([[1,1,2],[0,1,1],[0,-3,-2]], dtype=dtype)
 B = np.array([[-2,0,-1],[-5,1,-1],[3,0,1]], dtype=dtype)
 I3 = np.identity(3, dtype=dtype)
 O3 = np.zeros((3,3), dtype=dtype)
+O3_1 = np.zeros((1,3,3), dtype=dtype)
 
 def random_H_str(length):
     result = ""
@@ -25,10 +26,11 @@ def random_H(length):
     import conversion
     return conversion.h_to_mat(random_H_str(length))
 
-def count_true(arr):
+def count_true(arr):  # Massage the boolean array into a form Numba can handle
+    # if len(arr) == 0: return 0  # This line solves the error: "TypeError: No matching definition for argument type(s) array(float64, 1d, C)" and does not appear to be necessary if type is not specified for count_true_numba.
     return count_true_numba(np.array(arr))  # Numba doesn't like dealing with non-NumPy arrays (TODO: solve this problem better)
 
-@numba.jit(numba_dtype(numba.bool_[:]), nopython=True)
+@numba.jit(nopython=True)
 def count_true_numba(arr):  # Count the number of True values in a boolean array. Substitute for return np.count_nonzero(arr)
     result = 0
     for b in arr:
