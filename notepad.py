@@ -39,12 +39,14 @@ import numba
 
 # print(ref_to_length(1947355))
 
-@numba.jit(numba_dtype(numba_dtype[:,:], numba_dtype[:,:,:]), nopython=True)  # In this case, if we don't manually specify type, Numba actually slows things down.
-def find_first_equal(elem, elem_list):  # Returns the index of the first value of elem_list equal to elem, or -1 if there is no match
-    return 0
-    # for i in range((len(elem_list))):
-    #     if np.equal(elem, elem_list[i,:,:]).all(): return i
-    # return -1
+# @numba.jit(numba_dtype(numba_dtype[:,:], numba_dtype[:,:,:]), nopython=True)  # In this case, if we don't manually specify type, Numba actually slows things down.
+# def find_first_equal(elem, elem_list):  # Returns the index of the first value of elem_list equal to elem, or -1 if there is no match
+#     return 0
+#     # for i in range((len(elem_list))):
+#     #     if np.equal(elem, elem_list[i,:,:]).all(): return i
+#     # return -1
 
-ffe = find_first_equal(np.zeros((3,3), dtype=dtype), np.zeros((3,3,3), dtype=dtype))-1
-print(ffe)
+# ffe = find_first_equal(np.zeros((3,3), dtype=dtype), np.zeros((3,3,3), dtype=dtype))-1
+# print(ffe)
+
+print(ref_to_length(663336102817))
