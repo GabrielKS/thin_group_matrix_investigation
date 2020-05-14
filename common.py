@@ -13,6 +13,7 @@ B = np.array([[-2,0,-1],[-5,1,-1],[3,0,1]], dtype=dtype)
 I3 = np.identity(3, dtype=dtype)
 O3 = np.zeros((3,3), dtype=dtype)
 O3_1 = np.zeros((1,3,3), dtype=dtype)
+O1 = np.zeros((1), dtype=dtype)
 
 def random_H_str(length):
     result = ""

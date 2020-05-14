@@ -21,6 +21,7 @@ only_reduced = True
 # INTERMEDIATE SETTINGS
 cache_length = math.ceil(max_length/2)  # Maximum word length to cache matrices for (must be at least half of max_length)
 max_warnings = 10  # Maximum number of warnings per word length about matrix entries being very large
+chunk_size = 2**20  # Number of previous refs to process in each chunk
 
 
 # INTERMEDIATE DATA STRUCTURES
@@ -31,6 +32,9 @@ states = {"length_calculated": -1, "length_saved": -1, "warnings": 0}
 totals = {"total_words": 0, "reduced_words": 0, "canonically_reduced_words": 0, "same_length_unique": 0, "same_and_shorter_unique": 0, "reduced_nonunique": 0}
 unique_matrices = np.array([O3])  # A list of all the matrices in unique_results_all, for faster computation. We initialize with an entry because Numba doesn't like empty arrays.
 unique_matrices_hashed = np.array([0])  # A hashed version of unique_matrices, for even faster computation
+unique_matrices_length = []
+unique_matrices_length_hashed = []
+unique_refs_length = []
 
 # OUTPUT DATA STRUCTURES
 unique_results_all = []  # Array of dictionaries per unique matrix {"mat": NumPy_matrix_representing_this_h, "refs": all_integer_representations_of_this_h}
@@ -44,7 +48,7 @@ def main():
 
     for length in range(max_length+1):
         t1 = time.perf_counter()
-        analyze(length)
+        analyze_new(length)
         t2 = time.perf_counter()
         timers["analysis_time"] += t2-t1
         log(format_ratio("Analysis time (length="+str(length)+")", t2-t1, timers["analysis_time"]), "analysis_time", print_times_length)
@@ -57,6 +61,63 @@ def main():
 def populate(length):  # Populate words with all the words of length length, assuming populate(length-1) has already been called for all shorter length
     for i in range(length_to_ref(length), length_to_ref(length+1)):
         words_cache[i,:,:] = conversion.h_to_mat(conversion.int_to_h(i), mod=modulo)
+
+def analyze_new(length):
+    if length == 0:  # Simplest to just hard-code the base case
+        current_matrices = [np.array([I3])]
+        current_matrices_hashed = [mat_hash_3x3(current_matrices[0])]
+        current_refs = [1]
+    else: 
+        previous_matrices = unique_matrices_length[length-1]
+        previous_matrices_hashed = unique_matrices_length_hashed[length-1]
+        previous_refs = unique_refs_length[length-1]
+
+        current_matrices, current_matrices_hashed, current_refs = analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs)
+    consolidated_matrices, consolidated_matrices_hashed, consolidated_refs = consolidate(current_matrices, current_matrices_hashed, current_refs)
+    
+    n_old_matrices = unique_matrices.shape[0]  # We'll just be searching through unique_matrices* for previous occurrences of matrices, so no need to save refs or keep anything unconsolidated
+    n_new_matrices = consolidated_matrices.shape[0]
+    unique_matrices.resize((n_old_matrices+n_new_matrices, 3, 3))
+    unique_matrices[n_old_matrices:, :, :] = consolidated_matrices
+    unique_matrices_hashed.resize((n_old_matrices+n_new_matrices))
+    unique_matrices_hashed[n_old_matrices:] = consolidated_matrices_hashed
+    
+    unique_matrices_length.append(current_matrices)  # For unique_*_length* we want to be able to iterate per ref, so we keep things unconsolidated and save the refs
+    unique_matrices_length_hashed.append(current_matrices_hashed)
+    unique_refs_length.append(current_refs)
+
+    formatted_results = [{"mat": result[0], "refs": result[1]} for result in zip(consolidated_matrices, consolidated_refs)]
+    unique_results_all.extend(formatted_results)
+    unique_results_length.append(formatted_results)
+
+@numba.jit(nopython=True)
+def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs):
+    n_previous = previous_matrices.shape[0]
+    n_chunks = math.ceil(n_previous/chunk_size)
+    chunked_matrices = [O3_1.copy() for i in range(n_chunks)]
+    chunked_matrices_hashed = [O1.copy() for i in range(n_chunks)]
+    chunked_refs = [O1.copy() for i in range(n_chunks)]
+    
+    for chunk_i in range(n_chunks):  # TODO: parallelize by changing range to prange and editing the Numba annotation
+        start = chunk_i*chunk_size
+        stop = min((chunk_i+1)*chunk_size, n_previous)
+        these_previous_matrices = previous_matrices[start:stop]
+        these_previous_matrices_hashed = previous_matrices_hashed[start:stop]
+        these_previous_refs = previous_refs[start:stop]
+        these_matrices, these_matrices_hashed, these_refs = analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs)
+
+    current_matrices = chunked_matrices[0]  # TODO write code to concat all the chunks
+    current_matrices_hashed = chunked_matrices_hashed[0]
+    current_refs = chunked_refs[0]
+    return current_matrices, current_matrices_hashed, current_refs
+
+@numba.jit(nopython=True)
+def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs):
+    pass  #TODO write this
+
+@numba.jit(nopython=True)
+def consolidate(current_matrices, current_matrices_hashed, current_refs): 
+    pass  #TODO write this
 
 def analyze(length):  # Analyze words of length length, assuming analyze(length-1) has already been called for all shorter lengths but not this one
     t1 = time.perf_counter()
