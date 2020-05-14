@@ -89,3 +89,6 @@ def equals_lazy_3x3(a, b):  # Equivalent to np.equal(a, b).all()
 @numba.jit(nopython=True)
 def mat_hash_3x3(mat):  # A substitute for hash(mat.tobytes())
     return hash((mat[0,0], mat[0,1], mat[0,2], mat[1,0], mat[1,1], mat[1,2], mat[2,0], mat[2,1], mat[2,2]))
+
+def print_program_start():  # Print something conspicuous so it's easy to see the beginning of a program's output when scrolling up through lots of text in a terminal
+    print(("="*100+"\n")*10)

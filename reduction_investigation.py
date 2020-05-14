@@ -9,12 +9,11 @@ import pickle
 import numba
 
 # OUTPUT SETTINGS
-max_length = 30  # Maximum word length to examine
+max_length = 20  # Maximum word length to examine
 modulo = 0  # 0 for non-modular arithmetic, >1 to multiply and compare matrices using modular arithmetic
 print_times_length = True  # Whether or not to print how much time the steps take
 min_length_to_save = 20  # Minimum length to save the output files every iteration
-mod_str = "_mod_"+str(modulo) if modulo > 1 else ""
-output_dir = "output"+mod_str  # Output folder name
+output_prefix = "output"  # First part of folder name (second part is for the mod, if any)
 write_files = True  # Whether or not to save output to files
 max_refs_per_length = -1  # Maximum number of refs per length to store (all the others are discarded); -1 for keep them all
 only_reduced = True
@@ -38,7 +37,7 @@ unique_results_all = []  # Array of dictionaries per unique matrix {"mat": NumPy
 unique_results_length = []  # Similar to unique_results_all but one for each length, where the entries for each length do not contain any references to words of other lengths
 
 def main():
-    print(("="*100+"\n")*10)
+    print_program_start()
     atexit.register(save_output)  # Save output whenever the program exits
     for length in range(cache_length+1):
         populate(length)
@@ -152,9 +151,10 @@ def summarize(length):  # Computes summary statistics for words of length length
     log(format_ratio("Reduced nonunique", reduced_nonunique_length, totals["reduced_nonunique"]), "results_summary")
     log("", "results_summary")
 
-def save_output():
-    if not write_files: return  # Stop if we're not supposed to write files
-    if states["length_saved"] >= states["length_calculated"]: return  # Stop if there is no new information
+def save_output(force=False):
+    if not force:
+        if not write_files: return  # Stop if we're not supposed to write files
+        if states["length_saved"] >= states["length_calculated"]: return  # Stop if there is no new information
     
     # Put together the text output
     output_log = "length_calculated="+str(states["length_calculated"])+"\n"
@@ -164,26 +164,27 @@ def save_output():
     output_results_all = results_to_string(unique_results_all, "all")
     output_results_length = "\n\n".join([results_to_string(unique_result_length, "length="+str(i)) for i, unique_result_length in enumerate(unique_results_length)])
 
+    output_dir = output_prefix+("_mod_"+str(modulo) if modulo > 1 else "")
     # Create the output folder if necessary
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     # Write the text output
-    write_output(output_log, "output_log.txt")
-    write_output(output_results_all, "output_results_all.txt")
-    write_output(output_results_length, "output_results_length.txt")
+    write_output(output_log, output_dir, "output_log.txt")
+    write_output(output_results_all, output_dir, "output_results_all.txt")
+    write_output(output_results_length, output_dir, "output_results_length.txt")
 
     # Pickle the important variables so they can be further analyzed programmatically
-    pickle_data(unique_results_all, "results_all.pickle")
-    pickle_data(unique_results_length, "results_length.pickle")
+    pickle_data(unique_results_all, output_dir, "results_all.pickle")
+    pickle_data(unique_results_length, output_dir, "results_length.pickle")
 
     states["length_saved"] = states["length_calculated"]
 
-def write_output(output, filename):
+def write_output(output, output_dir, filename):
     with open(os.path.join(output_dir, filename), "w") as output_file:
         output_file.write(output)
 
-def pickle_data(data, filename):
+def pickle_data(data, output_dir, filename):
     with open(os.path.join(output_dir, filename), "wb") as data_file:
         pickle.dump(data, data_file)
 
