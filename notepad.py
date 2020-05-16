@@ -53,3 +53,13 @@ import numba
 
 # print(ref_to_h(multiply_ref_A(h_to_ref("AABBAB"))))
 # print(ref_to_h(multiply_ref_B(h_to_ref("AABBAB"))))
+
+# l = numba.typed.List()
+# l.append(2)
+# print(repr(l))
+# print(numba.types.ListType)
+# print(numba.types.int64)
+# print(numba.types.ListType(numba.types.int64))
+# l = numba.typed.List.empty_list(numba.types.int64)
+# l.append(2)
+# l.append(2.2)  # Errors
