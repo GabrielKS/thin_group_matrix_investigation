@@ -32,9 +32,9 @@ states = {"length_calculated": -1, "length_saved": -1, "warnings": 0}
 totals = {"total_words": 0, "reduced_words": 0, "canonically_reduced_words": 0, "same_length_unique": 0, "same_and_shorter_unique": 0, "reduced_nonunique": 0}
 unique_matrices = np.array([O3])  # A list of all the matrices in unique_results_all, for faster computation. We initialize with an entry because Numba doesn't like empty arrays.
 unique_matrices_hashed = np.array([0])  # A hashed version of unique_matrices, for even faster computation
-unique_matrices_length = []
-unique_matrices_length_hashed = []
-unique_refs_length = []
+unique_matrices_length = numba.typed.List()
+unique_matrices_length_hashed = numba.typed.List()
+unique_refs_length = numba.typed.List()
 
 # OUTPUT DATA STRUCTURES
 unique_results_all = []  # Array of dictionaries per unique matrix {"mat": NumPy_matrix_representing_this_h, "refs": all_integer_representations_of_this_h}
@@ -66,7 +66,7 @@ def analyze_new(length):
     if length == 0:  # Simplest to just hard-code the base case
         current_matrices = np.array([I3])
         current_matrices_hashed = np.array([hash_3x3(current_matrices[0])])
-        current_refs = [1]
+        current_refs = np.array([1])
     else: 
         previous_matrices = unique_matrices_length[length-1]
         previous_matrices_hashed = unique_matrices_length_hashed[length-1]
@@ -94,9 +94,13 @@ def analyze_new(length):
 def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs):
     n_previous = previous_matrices.shape[0]
     n_chunks = math.ceil(n_previous/chunk_size)
-    chunked_matrices = [O3_1.copy() for i in range(n_chunks)]
-    chunked_matrices_hashed = [O1.copy() for i in range(n_chunks)]
-    chunked_refs = [O1.copy() for i in range(n_chunks)]
+    chunked_matrices = numba.typed.List()
+    chunked_matrices_hashed = numba.typed.List()
+    chunked_refs = numba.typed.List()
+    for i in range(n_chunks):
+        chunked_matrices.append(O3_1.copy())
+        chunked_matrices_hashed.append(O1.copy())
+        chunked_refs.append(O1.copy())
     
     for i_chunk in range(n_chunks):  # TODO: parallelize by changing range to prange and editing the Numba annotation
         start = i_chunk*chunk_size
@@ -109,7 +113,9 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
         chunked_matrices_hashed[i_chunk] = these_matrices_hashed
         chunked_refs[i_chunk] = these_refs
 
-    n_current = np.sum(np.array([len(chunk) for chunk in chunked_refs]))  # Numba doesn't like Python's native sum()
+    n_current = 0
+    for chunk in chunked_refs:
+        n_current += len(chunk)
     current_matrices = np.zeros((n_current, 3, 3), dtype=dtype)
     current_matrices_hashed = np.zeros((n_current), dtype=dtype)
     current_refs = np.zeros((n_current), dtype=dtype)
@@ -163,17 +169,21 @@ def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matric
 
 @numba.jit(nopython=True)
 def consolidate_internal(current_matrices, current_matrices_hashed, current_refs): 
-    refs = [[ref] for ref in current_refs]  # TODO: use Numba's typed.List instead of native Python "reflected lists"
+    refs = numba.typed.List()
+    for ref in current_refs:
+        refs.append(list_with_element(ref))
     n_consolidated = len(current_refs)
     for i in range(len(current_refs)):
         n = find_first_equal_hash(current_matrices[i], current_matrices, current_matrices_hashed[i], current_matrices_hashed)
         if n < i:
             refs[n].append(refs[i][0])
-            refs[i] = [-1]  # Mark this ref as invalid because it's been moved
+            refs[i] = list_with_element(-1)  # Mark this ref as invalid because it's been moved
             n_consolidated -= 1
     consolidated_matrices = np.zeros((n_consolidated, 3, 3), dtype=dtype)
     consolidated_matrices_hashed = np.zeros((n_consolidated), dtype=dtype)
-    consolidated_refs = [[0] for i in range(n_consolidated)]
+    consolidated_refs = numba.typed.List()
+    for i in range(n_consolidated):
+        consolidated_refs.append(list_with_element(0))
     i_consolidated = 0
     for i_current in range(len(current_refs)):
         if refs[i_current][0] > 0:
@@ -195,9 +205,10 @@ def analyze(length):  # Analyze words of length length, assuming analyze(length-
 
 @numba.jit(nopython=True)
 def analyze_refs(start, stop, unique_matrices, unique_matrices_hashed):
-    these_unique_refs = [[0]]
+    these_unique_refs = numba.typed.List()
+    these_unique_refs.append(list_with_element(0))
     these_unique_matrices = np.zeros((1,3,3), dtype=dtype)  # A list of all the matrices in these_unique_results, for faster computation. We initialize with an entry because Numba doesn't like empty arrays.
-    these_unique_matrices_hashed = np.array([0])  # A list of all the hashes of these_unique_matrices, for even faster computation
+    these_unique_matrices_hashed = np.array(list_with_element(0))  # A list of all the hashes of these_unique_matrices, for even faster computation
     warnings = 0
     for ref in range(start, stop):  # Populate these_unique_results and these_unique_matrices_hashed
         mat, warn = int_to_mat_cached(words_cache, ref, mod=modulo)
