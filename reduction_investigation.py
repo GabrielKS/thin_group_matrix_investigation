@@ -60,12 +60,12 @@ def main():
 # @numba.jit(nopython=True)  # TODO: Numba-ify this -- involves Numba-ifying (or most likely working around) h_to_mat -- low priority as it is not a bottleneck
 def populate(length):  # Populate words with all the words of length length, assuming populate(length-1) has already been called for all shorter length
     for i in range(length_to_ref(length), length_to_ref(length+1)):
-        words_cache[i,:,:] = conversion.h_to_mat(conversion.int_to_h(i), mod=modulo)
+        words_cache[i,:,:] = conversion.h_to_mat(conversion.ref_to_h(i), mod=modulo)
 
 def analyze_new(length):
     if length == 0:  # Simplest to just hard-code the base case
         current_matrices = [np.array([I3])]
-        current_matrices_hashed = [mat_hash_3x3(current_matrices[0])]
+        current_matrices_hashed = [hash_3x3(current_matrices[0])]
         current_refs = [1]
     else: 
         previous_matrices = unique_matrices_length[length-1]
@@ -73,7 +73,7 @@ def analyze_new(length):
         previous_refs = unique_refs_length[length-1]
 
         current_matrices, current_matrices_hashed, current_refs = analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs)
-    consolidated_matrices, consolidated_matrices_hashed, consolidated_refs = consolidate(current_matrices, current_matrices_hashed, current_refs)
+    consolidated_matrices, consolidated_matrices_hashed, consolidated_refs = consolidate_internal(current_matrices, current_matrices_hashed, current_refs)
     
     n_old_matrices = unique_matrices.shape[0]  # We'll just be searching through unique_matrices* for previous occurrences of matrices, so no need to save refs or keep anything unconsolidated
     n_new_matrices = consolidated_matrices.shape[0]
@@ -98,26 +98,90 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
     chunked_matrices_hashed = [O1.copy() for i in range(n_chunks)]
     chunked_refs = [O1.copy() for i in range(n_chunks)]
     
-    for chunk_i in range(n_chunks):  # TODO: parallelize by changing range to prange and editing the Numba annotation
-        start = chunk_i*chunk_size
-        stop = min((chunk_i+1)*chunk_size, n_previous)
+    for i_chunk in range(n_chunks):  # TODO: parallelize by changing range to prange and editing the Numba annotation
+        start = i_chunk*chunk_size
+        stop = min((i_chunk+1)*chunk_size, n_previous)
         these_previous_matrices = previous_matrices[start:stop]
         these_previous_matrices_hashed = previous_matrices_hashed[start:stop]
         these_previous_refs = previous_refs[start:stop]
         these_matrices, these_matrices_hashed, these_refs = analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs)
+        chunked_matrices[i_chunk] = these_matrices
+        chunked_matrices_hashed[i_chunk] = these_matrices_hashed
+        chunked_refs[i_chunk] = these_refs
 
-    current_matrices = chunked_matrices[0]  # TODO write code to concat all the chunks
-    current_matrices_hashed = chunked_matrices_hashed[0]
-    current_refs = chunked_refs[0]
+    n_current = sum([len(chunk) for chunk in chunked_refs])
+    current_matrices = np.zeros((n_current, 3, 3), dtype=dtype)
+    current_matrices_hashed = np.zeros((n_current), dtype=dtype)
+    current_refs = np.zeros((n_current), dtype=dtype)
+
+    for i in range(n_current):
+        i_chunk = i // n_chunks
+        i_within = i % n_chunks
+        current_matrices[i, :, :] = chunked_matrices[i_chunk][i_within, :, :]
+        current_matrices_hashed[i] = chunked_matrices_hashed[i_chunk][i_within]
+        current_refs[i] = chunked_refs[i_chunk][i_within]
+        
     return current_matrices, current_matrices_hashed, current_refs
 
 @numba.jit(nopython=True)
-def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs):
-    pass  #TODO write this
+def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs):  # The new heart of the algorithm
+    n_previous = these_previous_matrices.shape[0]
+    possible_matrices = np.zeros((n_previous*2, 3, 3), dtype=dtype)
+    possible_matrices_hashed = np.zeros((n_previous*2), dtype=dtype)
+    possible_refs = np.zeros((n_previous*2), dtype=dtype)
+    for i_previous in range(n_previous):
+        mat_previous = these_previous_matrices[i_previous, :, :]
+        mat_A = multiply_3x3(mat_previous, A)
+        hash_A = hash_3x3(mat_A)
+        mat_B = multiply_3x3(mat_previous, B)
+        hash_B = hash_3x3(mat_B)
+        if find_first_equal_hash(mat_A, unique_matrices, hash_A, unique_matrices_hashed) < 0:
+            i_A = i_previous*2
+            ref_A = multiply_ref_A(these_previous_refs[i_previous])
+            possible_matrices[i_A, :, :] = mat_A
+            possible_matrices_hashed[i_A] = hash_A
+            possible_refs[i_A] = ref_A
+        if find_first_equal_hash(mat_B, unique_matrices, hash_B, unique_matrices_hashed) < 0:
+            i_B = i_previous*2+1
+            ref_B = multiply_ref_B(these_previous_refs[i_previous])
+            possible_matrices[i_B, :, :] = mat_B
+            possible_matrices_hashed[i_B] = hash_B
+            possible_refs[i_B] = ref_B
+
+    n_found = np.count_nonzero(possible_refs)
+    these_matrices = np.zeros((n_found, 3, 3), dtype=dtype)
+    these_matrices_hashed = np.zeros((n_found), dtype=dtype)
+    these_refs = np.zeros((n_found), dtype=dtype)
+    i_found = 0
+    for i_current in range(n_previous*2):
+        if possible_refs[i_current] > 0:
+            these_matrices[i_found, :, :] = possible_matrices[i_current, :, :]
+            these_matrices_hashed[i_found] = possible_matrices_hashed[i_current]
+            these_refs[i_found] = possible_refs[i_current]
+            i_found += 1
+    return these_matrices, these_matrices_hashed, these_refs
 
 @numba.jit(nopython=True)
-def consolidate(current_matrices, current_matrices_hashed, current_refs): 
-    pass  #TODO write this
+def consolidate_internal(current_matrices, current_matrices_hashed, current_refs): 
+    refs = [[ref] for ref in current_refs]
+    n_consolidated = len(current_refs)
+    for i in range(len(current_refs)):
+        n = find_first_equal_hash(current_matrices[i], current_matrices, current_matrices_hashed[i], current_matrices_hashed)
+        if n < i:
+            refs[n].append(refs[i])
+            refs[i] = []
+            n_consolidated -= 1
+    consolidated_matrices = np.zeros((n_consolidated, 3, 3), dtype=dtype)
+    consolidated_matrices_hashed = np.zeros((n_consolidated), dtype=dtype)
+    consolidated_refs = np.zeros((n_consolidated), dtype=dtype)
+    i_consolidated = 0
+    for i_current in range(len(current_refs)):
+        if len(refs[i_current]) > 0:
+            consolidated_matrices[i_consolidated, :, :] = current_matrices[i_current, :, :]
+            consolidated_matrices_hashed[i_consolidated] = current_matrices_hashed[i_current]
+            consolidated_refs[i_consolidated] = current_refs[i_current]
+            i_consolidated += 1
+    return consolidated_matrices, consolidated_matrices_hashed, consolidated_refs
 
 def analyze(length):  # Analyze words of length length, assuming analyze(length-1) has already been called for all shorter lengths but not this one
     t1 = time.perf_counter()
@@ -142,7 +206,7 @@ def analyze_refs(start, stop, unique_matrices, unique_matrices_hashed):
             print(mat)
             warnings += 1
 
-        this_hash = mat_hash_3x3(mat)  # Get a hash for streamlined comparison
+        this_hash = hash_3x3(mat)  # Get a hash for streamlined comparison
         if only_reduced and find_first_equal_hash(mat, unique_matrices, this_hash, unique_matrices_hashed) > 0: continue
         i = find_first_equal_hash(mat, these_unique_matrices, this_hash, these_unique_matrices_hashed)  # We now compare to what we have in these_unique_results so far. We do not subtract one because we drop these_unique_refs's element 0 also 
         if i >= 0:  # If we found a match, we add a reference to this one and move on
@@ -155,7 +219,7 @@ def analyze_refs(start, stop, unique_matrices, unique_matrices_hashed):
 
 def analyze_unique_results(unique_results):
     for this_result in unique_results:  # Now we search the results for shorter lengths and look for matches there
-        this_hash = mat_hash_3x3(this_result["mat"])
+        this_hash = hash_3x3(this_result["mat"])
         i = find_first_equal_hash(this_result["mat"], unique_matrices, this_hash, unique_matrices_hashed)-1  # We require that unique_matrices_all contain all unique matrices with reduced forms of shorter length.  Subtract one because we added element 0 manually.
         if i >= 0:
             unique_results_all[i]["refs"].extend(this_result["refs"])  # We add the refs of the current length to the list of existing refs (OK that we don't keep this separated by length because it's easy to test a ref for length)

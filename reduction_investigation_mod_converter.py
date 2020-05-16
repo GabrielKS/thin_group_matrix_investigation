@@ -26,10 +26,10 @@ def analyze_mods(modulo):
     for i in range(len(viewer.unique_results_all)):
         viewer.unique_results_all[i]["mat"] %= modulo  # Modulo everything
     all_matrices = np.array([result["mat"] for result in viewer.unique_results_all])
-    all_matrices_hashes = np.array([mat_hash_3x3(result["mat"]) for result in viewer.unique_results_all])
+    all_matrices_hashes = np.array([hash_3x3(result["mat"]) for result in viewer.unique_results_all])
     for i in range(len(viewer.unique_results_all)):
         if i % (len(viewer.unique_results_all)//update_frequency) == 0: print("{:.2%}".format(i/len(viewer.unique_results_all)))  # Print a status update every update_frequency-th of the way
-        j = investigator.find_first_equal_hash(viewer.unique_results_all[i]["mat"], all_matrices, mat_hash_3x3(viewer.unique_results_all[i]["mat"]), all_matrices_hashes)
+        j = investigator.find_first_equal_hash(viewer.unique_results_all[i]["mat"], all_matrices, hash_3x3(viewer.unique_results_all[i]["mat"]), all_matrices_hashes)
         if j < i:  # If we find an earlier match...
             if ref_to_length(viewer.unique_results_all[j]["refs"][0]) == ref_to_length(viewer.unique_results_all[i]["refs"][0]): viewer.unique_results_all[j]["refs"].extend(viewer.unique_results_all[i]["refs"])  # ...put the refs there if it's the same length...
             viewer.unique_results_all[i]["delete"] = True  # ...mark this entry for deletion

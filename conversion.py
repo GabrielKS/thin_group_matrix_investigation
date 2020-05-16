@@ -2,16 +2,16 @@ from common import *
 
 
 def main():
-    #print(int_to_bin(21))
-    print(int_to_h(76695844))
-    print(h_to_mat(int_to_h(76695844)))
-    #print(h_to_mat(int_to_h(21)))
+    #print(ref_to_bin(21))
+    print(ref_to_h(76695844))
+    print(h_to_mat(ref_to_h(76695844)))
+    #print(h_to_mat(ref_to_h(21)))
     print("done")
 
     '''
     # Conversion between numbers and binary strings
-    print(bin_to_int("1010011"))
-    print(int_to_bin(83))
+    print(bin_to_ref("1010011"))
+    print(ref_to_bin(83))
     print()
 
     # Conversion between binary strings and unreduced h (here, h is in reduced form)
@@ -33,7 +33,7 @@ def main():
 
     # Enumeration of reduced h
     for i in range(2, 100):
-        s = bin_to_h_reduced(int_to_bin(i))
+        s = bin_to_h_reduced(ref_to_bin(i))
         print(str(i).rjust(2)+": "+s)
     '''
 
@@ -50,10 +50,10 @@ def h_to_mat(s, mod=0):
         if mod > 1: result %= mod
     return result
 
-def int_to_bin(n):
+def ref_to_bin(n):
     return np.binary_repr(n)
 
-def bin_to_int(b):
+def bin_to_ref(b):
     a = np.array([int(d) for d in list(b)])
     return a.dot(2**np.arange(a.size)[::-1])
 
@@ -68,11 +68,11 @@ def h_to_bin_unreduced(s, alphabet=True):
     if alphabet: s = s.replace("A", "0").replace("B", "1")
     return "1"+s
 
-def int_to_h(n, alphabet=True):
-    return bin_to_h_unreduced(int_to_bin(n), alphabet)
+def ref_to_h(n, alphabet=True):
+    return bin_to_h_unreduced(ref_to_bin(n), alphabet)
 
-def h_to_int(s, alphabet=True):
-    return bin_to_int(h_to_bin_unreduced(s, alphabet))
+def h_to_ref(s, alphabet=True):
+    return bin_to_ref(h_to_bin_unreduced(s, alphabet))
 
 def bin_to_h_reduced(b):  # Turns out this doesn't work.
     b = b.lstrip("0")  # Remove any leading zeroes

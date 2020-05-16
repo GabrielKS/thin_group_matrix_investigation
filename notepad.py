@@ -49,4 +49,7 @@ import numba
 # ffe = find_first_equal(np.zeros((3,3), dtype=dtype), np.zeros((3,3,3), dtype=dtype))-1
 # print(ffe)
 
-print(ref_to_length(663336102817))
+# print(ref_to_length(663336102817))
+
+# print(ref_to_h(multiply_ref_A(h_to_ref("AABBAB"))))
+# print(ref_to_h(multiply_ref_B(h_to_ref("AABBAB"))))
