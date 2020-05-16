@@ -100,4 +100,4 @@ def multiply_ref_B(ref):
     return ref << 1 | 1
 
 def print_program_start():  # Print something conspicuous so it's easy to see the beginning of a program's output when scrolling up through lots of text in a terminal
-    print(("="*100+"\n")*100)
+    print(("="*100+"\n")*10)

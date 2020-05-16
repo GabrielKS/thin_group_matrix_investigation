@@ -9,12 +9,12 @@ import pickle
 import numba
 
 # OUTPUT SETTINGS
-max_length = 20  # Maximum word length to examine
+max_length = 28  # Maximum word length to examine
 modulo = 0  # 0 for non-modular arithmetic, >1 to multiply and compare matrices using modular arithmetic
 print_times_length = True  # Whether or not to print how much time the steps take
-min_length_to_save = 20  # Minimum length to save the output files every iteration
+min_length_to_save = 26  # Minimum length to save the output files every iteration
 output_prefix = "output"  # First part of folder name (second part is for the mod, if any)
-write_files = True  # Whether or not to save output to files
+write_files = False  # Whether or not to save output to files
 max_refs_per_length = -1  # Maximum number of refs per length to store (all the others are discarded); -1 for keep them all
 only_reduced = True
 
@@ -64,8 +64,8 @@ def populate(length):  # Populate words with all the words of length length, ass
 
 def analyze_new(length):
     if length == 0:  # Simplest to just hard-code the base case
-        current_matrices = [np.array([I3])]
-        current_matrices_hashed = [hash_3x3(current_matrices[0])]
+        current_matrices = np.array([I3])
+        current_matrices_hashed = np.array([hash_3x3(current_matrices[0])])
         current_refs = [1]
     else: 
         previous_matrices = unique_matrices_length[length-1]
@@ -109,18 +109,18 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
         chunked_matrices_hashed[i_chunk] = these_matrices_hashed
         chunked_refs[i_chunk] = these_refs
 
-    n_current = sum([len(chunk) for chunk in chunked_refs])
+    n_current = np.sum(np.array([len(chunk) for chunk in chunked_refs]))  # Numba doesn't like Python's native sum()
     current_matrices = np.zeros((n_current, 3, 3), dtype=dtype)
     current_matrices_hashed = np.zeros((n_current), dtype=dtype)
     current_refs = np.zeros((n_current), dtype=dtype)
 
     for i in range(n_current):
-        i_chunk = i // n_chunks
-        i_within = i % n_chunks
+        i_chunk = i // chunk_size
+        i_within = i % chunk_size
         current_matrices[i, :, :] = chunked_matrices[i_chunk][i_within, :, :]
         current_matrices_hashed[i] = chunked_matrices_hashed[i_chunk][i_within]
         current_refs[i] = chunked_refs[i_chunk][i_within]
-        
+
     return current_matrices, current_matrices_hashed, current_refs
 
 @numba.jit(nopython=True)
@@ -163,23 +163,23 @@ def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matric
 
 @numba.jit(nopython=True)
 def consolidate_internal(current_matrices, current_matrices_hashed, current_refs): 
-    refs = [[ref] for ref in current_refs]
+    refs = [[ref] for ref in current_refs]  # TODO: use Numba's typed.List instead of native Python "reflected lists"
     n_consolidated = len(current_refs)
     for i in range(len(current_refs)):
         n = find_first_equal_hash(current_matrices[i], current_matrices, current_matrices_hashed[i], current_matrices_hashed)
         if n < i:
-            refs[n].append(refs[i])
-            refs[i] = []
+            refs[n].append(refs[i][0])
+            refs[i] = [-1]  # Mark this ref as invalid because it's been moved
             n_consolidated -= 1
     consolidated_matrices = np.zeros((n_consolidated, 3, 3), dtype=dtype)
     consolidated_matrices_hashed = np.zeros((n_consolidated), dtype=dtype)
-    consolidated_refs = np.zeros((n_consolidated), dtype=dtype)
+    consolidated_refs = [[0] for i in range(n_consolidated)]
     i_consolidated = 0
     for i_current in range(len(current_refs)):
-        if len(refs[i_current]) > 0:
+        if refs[i_current][0] > 0:
             consolidated_matrices[i_consolidated, :, :] = current_matrices[i_current, :, :]
             consolidated_matrices_hashed[i_consolidated] = current_matrices_hashed[i_current]
-            consolidated_refs[i_consolidated] = current_refs[i_current]
+            consolidated_refs[i_consolidated] = refs[i_current]
             i_consolidated += 1
     return consolidated_matrices, consolidated_matrices_hashed, consolidated_refs
 
