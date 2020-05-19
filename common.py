@@ -107,5 +107,6 @@ def list_with_element(elem):
     l.append(elem)
     return l
 
+@numba.jit(nopython=True)
 def print_program_start():  # Print something conspicuous so it's easy to see the beginning of a program's output when scrolling up through lots of text in a terminal
     print(("="*100+"\n")*10)

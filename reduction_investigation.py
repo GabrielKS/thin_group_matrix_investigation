@@ -9,7 +9,7 @@ import pickle
 import numba
 
 # OUTPUT SETTINGS
-max_length = 28  # Maximum word length to examine
+max_length = 30  # Maximum word length to examine
 modulo = 0  # 0 for non-modular arithmetic, >1 to multiply and compare matrices using modular arithmetic
 print_times_length = True  # Whether or not to print how much time the steps take
 min_length_to_save = 26  # Minimum length to save the output files every iteration
@@ -21,7 +21,9 @@ only_reduced = True
 # INTERMEDIATE SETTINGS
 cache_length = math.ceil(max_length/2)  # Maximum word length to cache matrices for (must be at least half of max_length)
 max_warnings = 10  # Maximum number of warnings per word length about matrix entries being very large
-chunk_size = 2**20  # Number of previous refs to process in each chunk
+chunk_size = 2**13  # Number of previous refs to process in each chunk (TUNE this for speed and memory usage)
+ref_check_length = 20  # Number of last letters to check the reducedness of when finding unique refs/matrices (TUNE this for speed)
+ref_check_threshold = length_to_ref(ref_check_length+1)
 
 
 # INTERMEDIATE DATA STRUCTURES
@@ -72,9 +74,12 @@ def analyze_new(length):
         previous_matrices = unique_matrices_length[length-1]
         previous_matrices_hashed = unique_matrices_length_hashed[length-1]
         previous_refs = unique_refs_length[length-1]
+        ref_check_refs = unique_refs_length[ref_check_length] if len(unique_refs_length) > ref_check_length else O1
         t1 = time.perf_counter()
-        current_matrices, current_matrices_hashed, current_refs = analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs)
-        print(time.perf_counter()-t1)
+        current_matrices, current_matrices_hashed, current_refs = analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs)
+        t = time.perf_counter()-t1
+        print(t)
+        print(t/(math.ceil(previous_matrices.shape[0]/chunk_size)))
     consolidated_matrices, consolidated_matrices_hashed, consolidated_refs = consolidate_internal(current_matrices, current_matrices_hashed, current_refs)
     
     n_old_matrices = unique_matrices.shape[0]  # We'll just be searching through unique_matrices* for previous occurrences of matrices, so no need to save refs or keep anything unconsolidated
@@ -93,9 +98,11 @@ def analyze_new(length):
     unique_results_length.append(formatted_results)
 
 @numba.jit(nopython=True)
-def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs):
+def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs):
     n_previous = previous_matrices.shape[0]
     n_chunks = math.ceil(n_previous/chunk_size)
+    print(length)
+    print(n_chunks)
     chunked_matrices = numba.typed.List()
     chunked_matrices_hashed = numba.typed.List()
     chunked_refs = numba.typed.List()
@@ -103,14 +110,14 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
         chunked_matrices.append(O3_1.copy())
         chunked_matrices_hashed.append(O1.copy())
         chunked_refs.append(O1.copy())
-    
+
     for i_chunk in range(n_chunks):  # TODO: parallelize by changing range to prange and editing the Numba annotation
         start = i_chunk*chunk_size
         stop = min((i_chunk+1)*chunk_size, n_previous)
         these_previous_matrices = previous_matrices[start:stop]
         these_previous_matrices_hashed = previous_matrices_hashed[start:stop]
         these_previous_refs = previous_refs[start:stop]
-        these_matrices, these_matrices_hashed, these_refs = analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs)
+        these_matrices, these_matrices_hashed, these_refs = analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs, ref_check_refs)
         chunked_matrices[i_chunk] = these_matrices
         chunked_matrices_hashed[i_chunk] = these_matrices_hashed
         chunked_refs[i_chunk] = these_refs
@@ -122,17 +129,18 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
     current_matrices_hashed = np.zeros((n_current), dtype=dtype)
     current_refs = np.zeros((n_current), dtype=dtype)
 
-    for i in range(n_current):
-        i_chunk = i // chunk_size
-        i_within = i % chunk_size
-        current_matrices[i, :, :] = chunked_matrices[i_chunk][i_within, :, :]
-        current_matrices_hashed[i] = chunked_matrices_hashed[i_chunk][i_within]
-        current_refs[i] = chunked_refs[i_chunk][i_within]
+    i_current = 0
+    for i_chunk in range(n_chunks):
+        for i_within in range(len(chunked_refs[i_chunk])):
+            current_matrices[i_current, :, :] = chunked_matrices[i_chunk][i_within, :, :]
+            current_matrices_hashed[i_current] = chunked_matrices_hashed[i_chunk][i_within]
+            current_refs[i_current] = chunked_refs[i_chunk][i_within]
+            i_current += 1
 
     return current_matrices, current_matrices_hashed, current_refs
 
 @numba.jit(nopython=True)
-def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs):  # The new heart of the algorithm
+def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs, ref_check_refs):  # The new heart of the algorithm
     n_previous = these_previous_matrices.shape[0]
     possible_matrices = np.zeros((n_previous*2, 3, 3), dtype=dtype)
     possible_matrices_hashed = np.zeros((n_previous*2), dtype=dtype)
@@ -142,11 +150,13 @@ def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matric
         mat_previous = these_previous_matrices[i_previous, :, :]
         mat_A = multiply_3x3(mat_previous, A)
         hash_A = hash_3x3(mat_A)
+        ref_A = multiply_ref_A(these_previous_refs[i_previous])
         mat_B = multiply_3x3(mat_previous, B)
         hash_B = hash_3x3(mat_B)
-        if unique_with_hash(mat_A, unique_matrices, hash_A, unique_matrices_hashed):
+        ref_B = multiply_ref_B(these_previous_refs[i_previous])
+
+        if is_reduced(mat_A, unique_matrices, hash_A, unique_matrices_hashed, ref_A, ref_check_refs):
             i_A = i_previous*2
-            ref_A = multiply_ref_A(these_previous_refs[i_previous])
             possible_matrices[i_A, :, :] = mat_A
             possible_matrices_hashed[i_A] = hash_A
             possible_refs[i_A] = ref_A
@@ -155,9 +165,8 @@ def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matric
             possible_matrices[i_A, :, :] = mat_A
             possible_matrices_hashed[i_A] = hash_A
             possible_refs[i_A] = ref_A
-        if unique_with_hash(mat_B, unique_matrices, hash_B, unique_matrices_hashed):
+        if is_reduced(mat_B, unique_matrices, hash_B, unique_matrices_hashed, ref_B, ref_check_refs):
             i_B = i_previous*2+1
-            ref_B = multiply_ref_B(these_previous_refs[i_previous])
             possible_matrices[i_B, :, :] = mat_B
             possible_matrices_hashed[i_B] = hash_B
             possible_refs[i_B] = ref_B
@@ -361,6 +370,26 @@ def find_first_equal_hash(elem, elem_list, elem_hash, elem_hash_list):  # Return
     for i in range((len(elem_list))):
         if elem_hash == elem_hash_list[i] and equals_lazy_3x3(elem, elem_list[i,:,:]): return i
     return -1
+
+@numba.jit(nopython=True)
+def is_reduced(mat, mat_list, mat_hash, mat_hash_list, ref, ref_list):
+    if ref > 7:  # We check the last few letters to see if they reduce to I_3. Unfortunately, this all does not seem to eliminate much.
+        if (ref & 7) == 0: return False  # AAA
+        if (ref & 7) == 7: return False  # BBB
+        if ref > 255:
+            if (ref & 255) == 170: return False  # BABABABA
+            if (ref & 255) == 85: return False  # ABABABAB
+            if ref > 65535:
+                if (ref & 65535) == 52428: return False  # BBAABBAABBAABBAA
+                if (ref & 65535) == 13107: return False  # AABBAABBAABBAABB
+    if ref >= ref_check_threshold and not find_1d(ref_last_n(ref, ref_check_length), ref_list): return False
+    return unique_with_hash(mat, mat_list, mat_hash, mat_hash_list)
+
+@numba.jit(nopython=True)
+def find_1d(elem, elem_list):
+    for this_elem in elem_list:
+        if elem == this_elem: return True
+    return False
 
 @numba.jit(numba.types.bool_(numba.types.Array(numba_dtype, 2, "C", readonly=True), numba.types.Array(numba_dtype, 3, "C", readonly=True), numba_hashtype, numba.types.Array(numba_hashtype, 1, "C", readonly=True)), nopython=True)
 def unique_with_hash(elem, elem_list, elem_hash, elem_hash_list):  # This is the part that really needs to be optimized
