@@ -16,7 +16,6 @@ min_length_to_save = 26  # Minimum length to save the output files every iterati
 output_prefix = "output"  # First part of folder name (second part is for the mod, if any)
 write_files = False  # Whether or not to save output to files
 max_refs_per_length = -1  # Maximum number of refs per length to store (all the others are discarded); -1 for keep them all
-only_reduced = True
 
 # INTERMEDIATE SETTINGS
 cache_length = math.ceil(max_length/2)  # Maximum word length to cache matrices for (must be at least half of max_length)
@@ -31,7 +30,7 @@ words_cache = np.zeros((length_to_ref(cache_length+1), 3, 3), dtype=dtype)  # El
 timers = {"analysis_time": 0, "summarization_time": 0}
 log_strings = {"analysis_time": "", "summarization_time": "", "results_summary": ""}
 states = {"length_calculated": -1, "length_saved": -1, "warnings": 0}
-totals = {"total_words": 0, "reduced_words": 0, "canonically_reduced_words": 0, "same_length_unique": 0, "same_and_shorter_unique": 0, "reduced_nonunique": 0}
+totals = {"total_words": 0, "reduced_words": 0, "canonically_reduced_words": 0, "same_and_shorter_unique": 0, "reduced_nonunique": 0}
 unique_matrices = np.array([O3])  # A list of all the matrices in unique_results_all, for faster computation. We initialize with an entry because Numba doesn't like empty arrays.
 unique_matrices_hashed = np.array([0], dtype=hashtype)  # A hashed version of unique_matrices, for even faster computation
 unique_matrices_length = numba.typed.List()
@@ -47,8 +46,6 @@ unique_results_length = []  # Similar to unique_results_all but one for each len
 def main():
     print_program_start()
     atexit.register(save_output)  # Save output whenever the program exits
-    # for length in range(cache_length+1):
-    #     populate(length)
 
     for length in range(max_length+1):
         t1 = time.perf_counter()
@@ -61,13 +58,7 @@ def main():
         
         if length >= min_length_to_save: save_output()
 
-# @numba.jit(nopython=True)  # TODO: Numba-ify this -- involves Numba-ifying (or most likely working around) h_to_mat -- low priority as it is not a bottleneck
-def populate(length):  # Populate words with all the words of length length, assuming populate(length-1) has already been called for all shorter length
-    for i in range(length_to_ref(length), length_to_ref(length+1)):
-        words_cache[i,:,:] = conversion.h_to_mat(conversion.ref_to_h(i), mod=modulo)
-
 def analyze_new(length):
-    assert only_reduced  # The new algorithm only finds reduced words
     if length == 0:  # Simplest to just hard-code the base case
         current_matrices = np.array([I3])
         current_matrices_hashed = np.array([hash_3x3(current_matrices[0])])
@@ -215,55 +206,8 @@ def consolidate_internal(current_matrices, current_matrices_hashed, current_refs
             i_consolidated += 1
     return consolidated_matrices, consolidated_matrices_hashed, consolidated_refs
 
-def analyze(length):  # Analyze words of length length, assuming analyze(length-1) has already been called for all shorter lengths but not this one
-    t1 = time.perf_counter()
-    these_unique_matrices, these_unique_refs = analyze_refs(length_to_ref(length), length_to_ref(length+1), unique_matrices, unique_matrices_hashed)
-    these_unique_results = [{"mat": result[0], "refs": result[1]} for result in zip(these_unique_matrices, these_unique_refs)]
-    unique_results_length.append(these_unique_results)  # Save the per-length results globally (no need to keep the streamlined matrices per length)
-    print(time.perf_counter()-t1)
-    t1 = time.perf_counter()
-    analyze_unique_results(these_unique_results)
-    print(time.perf_counter()-t1)
-
-@numba.jit(nopython=True)
-def analyze_refs(start, stop, unique_matrices, unique_matrices_hashed):
-    these_unique_refs = numba.typed.List()
-    these_unique_refs.append(list_with_element(0))
-    these_unique_matrices = np.zeros((1,3,3), dtype=dtype)  # A list of all the matrices in these_unique_results, for faster computation. We initialize with an entry because Numba doesn't like empty arrays.
-    these_unique_matrices_hashed = np.array(list_with_element(0))  # A list of all the hashes of these_unique_matrices, for even faster computation
-    warnings = 0
-    for ref in range(start, stop):  # Populate these_unique_results and these_unique_matrices_hashed
-        mat, warn = int_to_mat_cached(words_cache, ref, mod=modulo)
-        if warn and warnings < max_warnings:
-            print("WARNING")
-            print(mat)
-            warnings += 1
-
-        this_hash = hash_3x3(mat)  # Get a hash for streamlined comparison
-        if only_reduced and find_first_equal_hash(mat, unique_matrices, this_hash, unique_matrices_hashed) > 0: continue
-        i = find_first_equal_hash(mat, these_unique_matrices, this_hash, these_unique_matrices_hashed)  # We now compare to what we have in these_unique_results so far. We do not subtract one because we drop these_unique_refs's element 0 also 
-        if i >= 0:  # If we found a match, we add a reference to this one and move on
-            if max_refs_per_length < 0 or len(these_unique_refs[i]) < max_refs_per_length: these_unique_refs[i].append(ref)
-        else:  # If we didn't find it, we create a new entry in our results and also add it to the streamlined data structure
-            these_unique_refs.append([ref])
-            these_unique_matrices = append_numba_3x3(these_unique_matrices, mat)  # I think this is inefficient, but I don't see a good alternative (and it's not done with *that* much data)
-            these_unique_matrices_hashed = np.concatenate((these_unique_matrices_hashed, np.array([this_hash])))
-    return these_unique_matrices[1:], these_unique_refs[1:]
-
-def analyze_unique_results(unique_results):
-    for this_result in unique_results:  # Now we search the results for shorter lengths and look for matches there
-        this_hash = hash_3x3(this_result["mat"])
-        i = find_first_equal_hash(this_result["mat"], unique_matrices, this_hash, unique_matrices_hashed)-1  # We require that unique_matrices_all contain all unique matrices with reduced forms of shorter length.  Subtract one because we added element 0 manually.
-        if i >= 0:
-            unique_results_all[i]["refs"].extend(this_result["refs"])  # We add the refs of the current length to the list of existing refs (OK that we don't keep this separated by length because it's easy to test a ref for length)
-        else:
-            unique_results_all.append({"mat": this_result["mat"], "refs": copy.copy(this_result["refs"])})  # If this_result["refs"] is not copied here, it introduces an annoying bug
-            append_inplace_3x3(unique_matrices, this_result["mat"])
-            append_inplace_1d(unique_matrices_hashed, this_hash)
-
 def summarize(length):  # Computes summary statistics for words of length length and all words up to length length. Prepare for lots of dense one-liners.
     t1 = time.perf_counter()
-    these_unique_results = unique_results_length[length]
     total_words_length = length_to_ref(length)
     canonically_reduced_words_length = count_true([ref_to_length(this_result["refs"][0]) == length for this_result in unique_results_all])  # A word of length length is canonically reduced if it is the first ref for its result
     reduced_words_length = sum([
@@ -272,7 +216,6 @@ def summarize(length):  # Computes summary statistics for words of length length
             ref_to_length(ref) == length
             for ref in this_result["refs"]])
         for this_result in unique_results_all])  # A word of length length is reduced if the canonically reduced form of its matrix is of length length
-    if not only_reduced: same_length_unique_length = count_true([len(this_result["refs"]) == 1 for this_result in these_unique_results])
     same_and_shorter_unique_length = count_true([
         False if ref_to_length(this_result["refs"][0]) != length else
         count_true([
@@ -290,7 +233,6 @@ def summarize(length):  # Computes summary statistics for words of length length
     totals["total_words"] += total_words_length
     totals["reduced_words"] += reduced_words_length
     totals["canonically_reduced_words"] += canonically_reduced_words_length
-    if not only_reduced: totals["same_length_unique"] += same_length_unique_length
     totals["same_and_shorter_unique"] += same_and_shorter_unique_length
     totals["reduced_nonunique"] += reduced_nonunique_length
 
@@ -304,7 +246,6 @@ def summarize(length):  # Computes summary statistics for words of length length
     log(format_ratio("Total", total_words_length, totals["total_words"]), "results_summary")
     log(format_ratio("Reduced", reduced_words_length, totals["reduced_words"]), "results_summary")
     log(format_ratio("Canonically reduced", canonically_reduced_words_length, totals["canonically_reduced_words"]), "results_summary")
-    log("Same-length unique: not computed" if only_reduced else format_ratio("Same-length unique", same_length_unique_length, totals["same_length_unique"]), "results_summary")
     log(format_ratio("Same-and-shorter unique", same_and_shorter_unique_length, totals["same_and_shorter_unique"]), "results_summary")
     log(format_ratio("Reduced nonunique", reduced_nonunique_length, totals["reduced_nonunique"]), "results_summary")
     log("", "results_summary")
