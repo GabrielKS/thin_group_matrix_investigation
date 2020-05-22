@@ -6,8 +6,8 @@ import numba
 dtype = np.int64  # NumPy datatype
 numba_dtype = numba.int64  # Numby datatype
 numba_dtype_str = "int64"
-hashtype = np.int16  # I hoped that a smaller datatype for hashes might make comparisons faster. It doesn't seem to help very much.
-numba_hashtype = numba.int16
+hashtype = np.int64  # I hoped that a smaller datatype for hashes might make comparisons faster. It doesn't seem to help very much. TODO: figure out why reduction_investigation is no longer acception int16
+numba_hashtype = numba.int64
 warning_threshold = 2**53  # Warn us if numbers get this big
 
 A = np.array([[1,1,2],[0,1,1],[0,-3,-2]], dtype=dtype)

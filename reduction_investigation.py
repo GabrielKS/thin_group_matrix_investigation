@@ -9,10 +9,10 @@ import pickle
 import numba
 
 # OUTPUT SETTINGS
-max_length = 30  # Maximum word length to examine
+max_length = 32  # Maximum word length to examine
 modulo = 0  # 0 for non-modular arithmetic, >1 to multiply and compare matrices using modular arithmetic
 print_times_length = True  # Whether or not to print how much time the steps take
-min_length_to_save = 26  # Minimum length to save the output files every iteration
+min_length_to_save = 28  # Minimum length to save the output files every iteration
 output_prefix = "output"  # First part of folder name (second part is for the mod, if any)
 write_files = False  # Whether or not to save output to files
 max_refs_per_length = -1  # Maximum number of refs per length to store (all the others are discarded); -1 for keep them all
@@ -20,10 +20,10 @@ max_refs_per_length = -1  # Maximum number of refs per length to store (all the 
 # INTERMEDIATE SETTINGS
 cache_length = math.ceil(max_length/2)  # Maximum word length to cache matrices for (must be at least half of max_length)
 max_warnings = 10  # Maximum number of warnings per word length about matrix entries being very large
-chunk_size = 2**13  # Number of previous refs to process in each chunk (TUNE this for speed and memory usage)
-ref_check_length = 20  # Number of last letters to check the reducedness of when finding unique refs/matrices (TUNE this for speed)
-ref_check_threshold = length_to_ref(ref_check_length+1)
-
+chunk_size = 2**13  # Number of previous refs to process in each chunk (TODO: TUNE this for speed and memory usage, maybe implement constant(ish) time per chunk)
+ref_check_length = 20  # Number of last letters to check the reducedness of when finding unique refs/matrices (TODO: TUNE this for speed)
+ref_check_threshold = length_to_ref(ref_check_length+1)  # Minimum ref at which to perform the above reducedness check
+parallel = True
 
 # INTERMEDIATE DATA STRUCTURES
 words_cache = np.zeros((length_to_ref(cache_length+1), 3, 3), dtype=dtype)  # Element 0 of words is a 3x3 array of zeroes, a stand-in for None. Element i of words for i>0 is the matrix corresponding to ref i
@@ -68,13 +68,12 @@ def analyze_new(length):
         previous_matrices_hashed = unique_matrices_length_hashed[length-1]
         previous_refs = unique_refs_length[length-1]
         ref_check_refs = unique_refs_length[ref_check_length] if len(unique_refs_length) > ref_check_length else O1
-        t1 = time.perf_counter()
         current_matrices, current_matrices_hashed, current_refs = analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs)
-        t = time.perf_counter()-t1
-        print(t)
-        if previous_matrices.shape[0] > 0: print(t/(math.ceil(previous_matrices.shape[0]/chunk_size)))
+    t1 = time.perf_counter()
     consolidated_matrices, consolidated_matrices_hashed, consolidated_refs = consolidate_internal(current_matrices, current_matrices_hashed, current_refs)
+    print("Consolidation: "+str(time.perf_counter()-t1))
     
+    t1 = time.perf_counter()
     n_old_matrices = unique_matrices.shape[0]  # We'll just be searching through unique_matrices* for previous occurrences of matrices, so no need to save refs or keep anything unconsolidated
     n_new_matrices = consolidated_matrices.shape[0]
     unique_matrices.resize((n_old_matrices+n_new_matrices, 3, 3))
@@ -89,13 +88,26 @@ def analyze_new(length):
     formatted_results = [{"mat": result[0], "refs": result[1]} for result in zip(consolidated_matrices, consolidated_refs)]
     unique_results_all.extend(formatted_results)
     unique_results_length.append(formatted_results)
+    print("Formatting: "+str(time.perf_counter()-t1))
 
-@numba.jit(nopython=True, parallel=False)
 def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs):
+    t1 = time.perf_counter()
+    n_chunks, chunked_matrices, chunked_matrices_hashed, chunked_refs = analyze_chunks(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs)
+    t2 = time.perf_counter()
+    current_matrices, current_matrices_hashed, current_refs = flatten_chunks(n_chunks, chunked_matrices, chunked_matrices_hashed, chunked_refs)
+    t3 = time.perf_counter()
+    print("Length "+str(length)+":")
+    if previous_matrices.shape[0] > 0:
+        print("Primary: "+str(t2-t1))
+        print("Primary per chunk: "+str((t2-t1)/n_chunks))
+        print("Chunks: "+str(n_chunks))
+        print("Flattening: "+str(t3-t2))
+    return current_matrices, current_matrices_hashed, current_refs
+
+@numba.jit(nopython=True, parallel=parallel)  # This is the part that gets parallelized
+def analyze_chunks(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs):
     n_previous = previous_matrices.shape[0]
     n_chunks = math.ceil(n_previous/chunk_size)
-    print(length)
-    print(n_chunks)
     chunked_matrices = numba.typed.List()
     chunked_matrices_hashed = numba.typed.List()
     chunked_refs = numba.typed.List()
@@ -104,7 +116,7 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
         chunked_matrices_hashed.append(O1.copy())
         chunked_refs.append(O1.copy())
 
-    for i_chunk in range(n_chunks):  # TODO: parallelize by changing range to prange and editing the Numba annotation
+    for i_chunk in numba.prange(n_chunks):  # TODO: parallelize by changing range to prange and editing the Numba annotation
         start = i_chunk*chunk_size
         stop = min((i_chunk+1)*chunk_size, n_previous)
         these_previous_matrices = previous_matrices[start:stop]
@@ -115,11 +127,15 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
         chunked_matrices_hashed[i_chunk] = these_matrices_hashed
         chunked_refs[i_chunk] = these_refs
 
+    return n_chunks, chunked_matrices, chunked_matrices_hashed, chunked_refs
+
+@numba.jit(nopython=True)  # Don't parallelize this without changes or it produces incorrect results
+def flatten_chunks(n_chunks, chunked_matrices, chunked_matrices_hashed, chunked_refs):
     n_current = 0
     for chunk in chunked_refs:
         n_current += len(chunk)
     current_matrices = np.zeros((n_current, 3, 3), dtype=dtype)
-    current_matrices_hashed = np.zeros((n_current), dtype=dtype)
+    current_matrices_hashed = np.zeros((n_current), dtype=hashtype)
     current_refs = np.zeros((n_current), dtype=dtype)
 
     i_current = 0
@@ -131,12 +147,13 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
             i_current += 1
 
     return current_matrices, current_matrices_hashed, current_refs
+    
 
 @numba.jit(nopython=True)
 def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs, ref_check_refs):  # The new heart of the algorithm
     n_previous = these_previous_matrices.shape[0]
     possible_matrices = np.zeros((n_previous*2, 3, 3), dtype=dtype)
-    possible_matrices_hashed = np.zeros((n_previous*2), dtype=dtype)
+    possible_matrices_hashed = np.zeros((n_previous*2), dtype=hashtype)
     possible_refs = np.zeros((n_previous*2), dtype=dtype)
 
     for i_previous in range(n_previous):
@@ -169,7 +186,7 @@ def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matric
 
     n_found = np.count_nonzero(possible_refs)
     these_matrices = np.zeros((n_found, 3, 3), dtype=dtype)
-    these_matrices_hashed = np.zeros((n_found), dtype=dtype)
+    these_matrices_hashed = np.zeros((n_found), dtype=hashtype)
     these_refs = np.zeros((n_found), dtype=dtype)
     i_found = 0
     for i_current in range(n_previous*2):
@@ -193,7 +210,7 @@ def consolidate_internal(current_matrices, current_matrices_hashed, current_refs
             refs[i] = list_with_element(-1)  # Mark this ref as invalid because it's been moved
             n_consolidated -= 1
     consolidated_matrices = np.zeros((n_consolidated, 3, 3), dtype=dtype)
-    consolidated_matrices_hashed = np.zeros((n_consolidated), dtype=dtype)
+    consolidated_matrices_hashed = np.zeros((n_consolidated), dtype=hashtype)
     consolidated_refs = numba.typed.List()
     for i in range(n_consolidated):
         consolidated_refs.append(list_with_element(0))
@@ -311,12 +328,6 @@ def int_to_mat_cached(words_cache, ref, mod=0):
     if mod > 1: result %= mod
     return result, warn
 
-@numba.jit(numba_dtype(numba.types.Array(numba_dtype, 2, "A", readonly=True), numba.types.Array(numba_dtype, 3, "A", readonly=True), numba_dtype, numba.types.Array(numba_dtype, 1, "A", readonly=True)), nopython=True)  # In this case, if we don't manually specify type, Numba actually slows things down.
-def find_first_equal_hash(elem, elem_list, elem_hash, elem_hash_list):  # Returns the index of the first value of elem_list equal to elem, or -1 if there is no match
-    for i in range((len(elem_list))):
-        if elem_hash == elem_hash_list[i] and equals_lazy_3x3(elem, elem_list[i,:,:]): return i
-    return -1
-
 @numba.jit(nopython=True)
 def is_reduced(mat, mat_list, mat_hash, mat_hash_list, ref, ref_list):
     if ref > 7:  # We check the last few letters to see if they reduce to I_3. Unfortunately, this all does not seem to eliminate much.
@@ -337,24 +348,28 @@ def find_1d(elem, elem_list):
         if elem == this_elem: return True
     return False
 
-@numba.jit(numba.types.bool_(numba.types.Array(numba_dtype, 2, "C", readonly=True), numba.types.Array(numba_dtype, 3, "C", readonly=True), numba_hashtype, numba.types.Array(numba_hashtype, 1, "C", readonly=True)), nopython=True)
-def unique_with_hash(elem, elem_list, elem_hash, elem_hash_list):  # This is the part that really needs to be optimized
+@numba.jit(numba_dtype(numba.types.Array(numba_dtype, 2, "A", readonly=True), numba.types.Array(numba_dtype, 3, "A", readonly=True), numba_hashtype, numba.types.Array(numba_hashtype, 1, "A", readonly=True)), nopython=True)  # In this case, if we don't manually specify type, Numba actually slows things down.
+def find_first_equal_hash(elem, elem_list, elem_hash, elem_hash_list):  # Returns the index of the first value of elem_list equal to elem, or -1 if there is no match
     i = 0
     s = 8
     l = len(elem_list)-s
     while i < l:  # Unroll for a little more speed (TODO: be more rigorous about this)
-        if elem_hash == elem_hash_list[i] and equals_lazy_3x3(elem, elem_list[i]): return False
-        if elem_hash == elem_hash_list[i+1] and equals_lazy_3x3(elem, elem_list[i+1]): return False
-        if elem_hash == elem_hash_list[i+2] and equals_lazy_3x3(elem, elem_list[i+2]): return False
-        if elem_hash == elem_hash_list[i+3] and equals_lazy_3x3(elem, elem_list[i+3]): return False
-        if elem_hash == elem_hash_list[i+4] and equals_lazy_3x3(elem, elem_list[i+4]): return False
-        if elem_hash == elem_hash_list[i+5] and equals_lazy_3x3(elem, elem_list[i+5]): return False
-        if elem_hash == elem_hash_list[i+6] and equals_lazy_3x3(elem, elem_list[i+6]): return False
-        if elem_hash == elem_hash_list[i+7] and equals_lazy_3x3(elem, elem_list[i+7]): return False
+        if elem_hash == elem_hash_list[i] and equals_lazy_3x3(elem, elem_list[i]): return i
+        if elem_hash == elem_hash_list[i+1] and equals_lazy_3x3(elem, elem_list[i+1]): return i+1
+        if elem_hash == elem_hash_list[i+2] and equals_lazy_3x3(elem, elem_list[i+2]): return i+2
+        if elem_hash == elem_hash_list[i+3] and equals_lazy_3x3(elem, elem_list[i+3]): return i+3
+        if elem_hash == elem_hash_list[i+4] and equals_lazy_3x3(elem, elem_list[i+4]): return i+4
+        if elem_hash == elem_hash_list[i+5] and equals_lazy_3x3(elem, elem_list[i+5]): return i+5
+        if elem_hash == elem_hash_list[i+6] and equals_lazy_3x3(elem, elem_list[i+6]): return i+6
+        if elem_hash == elem_hash_list[i+7] and equals_lazy_3x3(elem, elem_list[i+7]): return i+7
         i += s
     for i in range(i, len(elem_list)):
-        if elem_hash == elem_hash_list[i] and equals_lazy_3x3(elem, elem_list[i]): return False
-    return True
+        if elem_hash == elem_hash_list[i] and equals_lazy_3x3(elem, elem_list[i]): return i
+    return -1
+
+@numba.jit(numba.types.bool_(numba.types.Array(numba_dtype, 2, "C", readonly=True), numba.types.Array(numba_dtype, 3, "C", readonly=True), numba_hashtype, numba.types.Array(numba_hashtype, 1, "C", readonly=True)), nopython=True)
+def unique_with_hash(elem, elem_list, elem_hash, elem_hash_list):  # This is the part that really needs to be optimized
+    return find_first_equal_hash(elem, elem_list, elem_hash, elem_hash_list) < 0
 
 @numba.jit(nopython=True)
 def append_numba_3x3(mat, to_append):
