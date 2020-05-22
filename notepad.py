@@ -63,3 +63,8 @@ import numba
 # l = numba.typed.List.empty_list(numba.types.int64)
 # l.append(2)
 # l.append(2.2)  # Errors
+
+# print(type(hash_3x3(A)))
+
+print(ref_to_h(14380199))
+print(h_to_ref("BBB"))

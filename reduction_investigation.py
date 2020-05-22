@@ -1,4 +1,4 @@
-from common import *
+from common import *  # pylint: disable=unused-wildcard-import
 import conversion
 import time
 import copy
@@ -37,6 +37,8 @@ unique_matrices_hashed = np.array([0], dtype=hashtype)  # A hashed version of un
 unique_matrices_length = numba.typed.List()
 unique_matrices_length_hashed = numba.typed.List()
 unique_refs_length = numba.typed.List()
+mA = A % modulo if modulo > 0 else A
+mB = B % modulo if modulo > 0 else B
 
 # OUTPUT DATA STRUCTURES
 unique_results_all = []  # Array of dictionaries per unique matrix {"mat": NumPy_matrix_representing_this_h, "refs": all_integer_representations_of_this_h}
@@ -45,8 +47,8 @@ unique_results_length = []  # Similar to unique_results_all but one for each len
 def main():
     print_program_start()
     atexit.register(save_output)  # Save output whenever the program exits
-    for length in range(cache_length+1):
-        populate(length)
+    # for length in range(cache_length+1):
+    #     populate(length)
 
     for length in range(max_length+1):
         t1 = time.perf_counter()
@@ -79,7 +81,7 @@ def analyze_new(length):
         current_matrices, current_matrices_hashed, current_refs = analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs)
         t = time.perf_counter()-t1
         print(t)
-        print(t/(math.ceil(previous_matrices.shape[0]/chunk_size)))
+        if previous_matrices.shape[0] > 0: print(t/(math.ceil(previous_matrices.shape[0]/chunk_size)))
     consolidated_matrices, consolidated_matrices_hashed, consolidated_refs = consolidate_internal(current_matrices, current_matrices_hashed, current_refs)
     
     n_old_matrices = unique_matrices.shape[0]  # We'll just be searching through unique_matrices* for previous occurrences of matrices, so no need to save refs or keep anything unconsolidated
@@ -97,7 +99,7 @@ def analyze_new(length):
     unique_results_all.extend(formatted_results)
     unique_results_length.append(formatted_results)
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, parallel=False)
 def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs):
     n_previous = previous_matrices.shape[0]
     n_chunks = math.ceil(n_previous/chunk_size)
@@ -106,7 +108,7 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
     chunked_matrices = numba.typed.List()
     chunked_matrices_hashed = numba.typed.List()
     chunked_refs = numba.typed.List()
-    for i in range(n_chunks):
+    for _ in range(n_chunks):
         chunked_matrices.append(O3_1.copy())
         chunked_matrices_hashed.append(O1.copy())
         chunked_refs.append(O1.copy())
@@ -148,12 +150,15 @@ def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matric
 
     for i_previous in range(n_previous):
         mat_previous = these_previous_matrices[i_previous, :, :]
-        mat_A = multiply_3x3(mat_previous, A)
-        hash_A = hash_3x3(mat_A)
+        mat_A = multiply_3x3(mat_previous, mA)
+        mat_B = multiply_3x3(mat_previous, mB)
         ref_A = multiply_ref_A(these_previous_refs[i_previous])
-        mat_B = multiply_3x3(mat_previous, B)
-        hash_B = hash_3x3(mat_B)
         ref_B = multiply_ref_B(these_previous_refs[i_previous])
+        if modulo > 0:
+            mat_A %= modulo
+            mat_B %= modulo
+        hash_A = hash_3x3(mat_A)
+        hash_B = hash_3x3(mat_B)
 
         if is_reduced(mat_A, unique_matrices, hash_A, unique_matrices_hashed, ref_A, ref_check_refs):
             i_A = i_previous*2

@@ -38,8 +38,8 @@ def main():
     '''
 
 def h_to_mat(s, mod=0):
-    mA = A
-    mB = B
+    mA = A.copy()
+    mB = B.copy()
     if mod > 1:
         mA %= mod
         mB %= mod
