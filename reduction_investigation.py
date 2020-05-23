@@ -38,6 +38,7 @@ unique_matrices_length_hashed = numba.typed.List()
 unique_refs_length = numba.typed.List()
 mA = A % modulo if modulo > 0 else A
 mB = B % modulo if modulo > 0 else B
+mgae_length = numba.typed.List()  # Matrix of greatest absolute entries
 
 # OUTPUT DATA STRUCTURES
 unique_results_all = []  # Array of dictionaries per unique matrix {"mat": NumPy_matrix_representing_this_h, "refs": all_integer_representations_of_this_h}
@@ -68,7 +69,8 @@ def analyze_new(length):
         previous_matrices_hashed = unique_matrices_length_hashed[length-1]
         previous_refs = unique_refs_length[length-1]
         ref_check_refs = unique_refs_length[ref_check_length] if len(unique_refs_length) > ref_check_length else O1
-        current_matrices, current_matrices_hashed, current_refs = analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs)
+        previous_mgae = mgae_length[length-1]
+        current_matrices, current_matrices_hashed, current_refs = analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs, previous_mgae)
     t1 = time.perf_counter()
     consolidated_matrices, consolidated_matrices_hashed, consolidated_refs = consolidate_internal(current_matrices, current_matrices_hashed, current_refs)
     print("Consolidation: "+str(time.perf_counter()-t1))
@@ -88,11 +90,14 @@ def analyze_new(length):
     formatted_results = [{"mat": result[0], "refs": result[1]} for result in zip(consolidated_matrices, consolidated_refs)]
     unique_results_all.extend(formatted_results)
     unique_results_length.append(formatted_results)
+
+    mgae_length.append(np.max(np.abs(consolidated_matrices), axis=0))
+
     print("Formatting: "+str(time.perf_counter()-t1))
 
-def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs):
+def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs, previous_mgae):
     t1 = time.perf_counter()
-    n_chunks, chunked_matrices, chunked_matrices_hashed, chunked_refs = analyze_chunks(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs)
+    n_chunks, chunked_matrices, chunked_matrices_hashed, chunked_refs = analyze_chunks(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs, previous_mgae)
     t2 = time.perf_counter()
     current_matrices, current_matrices_hashed, current_refs = flatten_chunks(n_chunks, chunked_matrices, chunked_matrices_hashed, chunked_refs)
     t3 = time.perf_counter()
@@ -105,7 +110,7 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
     return current_matrices, current_matrices_hashed, current_refs
 
 @numba.jit(nopython=True, parallel=parallel)  # This is the part that gets parallelized
-def analyze_chunks(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs):
+def analyze_chunks(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs, previous_mgae):
     n_previous = previous_matrices.shape[0]
     n_chunks = math.ceil(n_previous/chunk_size)
     chunked_matrices = numba.typed.List()
@@ -122,7 +127,7 @@ def analyze_chunks(length, unique_matrices, unique_matrices_hashed, previous_mat
         these_previous_matrices = previous_matrices[start:stop]
         these_previous_matrices_hashed = previous_matrices_hashed[start:stop]
         these_previous_refs = previous_refs[start:stop]
-        these_matrices, these_matrices_hashed, these_refs = analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs, ref_check_refs)
+        these_matrices, these_matrices_hashed, these_refs = analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs, ref_check_refs, previous_mgae)
         chunked_matrices[i_chunk] = these_matrices
         chunked_matrices_hashed[i_chunk] = these_matrices_hashed
         chunked_refs[i_chunk] = these_refs
@@ -150,7 +155,7 @@ def flatten_chunks(n_chunks, chunked_matrices, chunked_matrices_hashed, chunked_
     
 
 @numba.jit(nopython=True)
-def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs, ref_check_refs):  # The new heart of the algorithm
+def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs, ref_check_refs, previous_mgae):  # The new heart of the algorithm
     n_previous = these_previous_matrices.shape[0]
     possible_matrices = np.zeros((n_previous*2, 3, 3), dtype=dtype)
     possible_matrices_hashed = np.zeros((n_previous*2), dtype=hashtype)
@@ -168,7 +173,7 @@ def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matric
         hash_A = hash_3x3(mat_A)
         hash_B = hash_3x3(mat_B)
 
-        if is_reduced(mat_A, unique_matrices, hash_A, unique_matrices_hashed, ref_A, ref_check_refs):
+        if is_reduced(mat_A, unique_matrices, hash_A, unique_matrices_hashed, ref_A, ref_check_refs, previous_mgae):
             i_A = i_previous*2
             possible_matrices[i_A, :, :] = mat_A
             possible_matrices_hashed[i_A] = hash_A
@@ -178,7 +183,7 @@ def analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matric
             possible_matrices[i_A, :, :] = mat_A
             possible_matrices_hashed[i_A] = hash_A
             possible_refs[i_A] = ref_A
-        if is_reduced(mat_B, unique_matrices, hash_B, unique_matrices_hashed, ref_B, ref_check_refs):
+        if is_reduced(mat_B, unique_matrices, hash_B, unique_matrices_hashed, ref_B, ref_check_refs, previous_mgae):
             i_B = i_previous*2+1
             possible_matrices[i_B, :, :] = mat_B
             possible_matrices_hashed[i_B] = hash_B
@@ -329,7 +334,7 @@ def int_to_mat_cached(words_cache, ref, mod=0):
     return result, warn
 
 @numba.jit(nopython=True)
-def is_reduced(mat, mat_list, mat_hash, mat_hash_list, ref, ref_list):
+def is_reduced(mat, mat_list, mat_hash, mat_hash_list, ref, ref_list, mgae):
     if ref > 7:  # We check the last few letters to see if they reduce to I_3. Unfortunately, this all does not seem to eliminate much.
         if (ref & 7) == 0: return False  # AAA
         if (ref & 7) == 7: return False  # BBB
@@ -338,7 +343,8 @@ def is_reduced(mat, mat_list, mat_hash, mat_hash_list, ref, ref_list):
             if (ref & 255) == 85: return False  # ABABABAB
             if ref > 65535:
                 if (ref & 65535) == 52428: return False  # BBAABBAABBAABBAA
-                if (ref & 65535) == 13107: return False  # AABBAABBAABBAABB
+                if (ref & 65535) == 13107: return False  # AABBAABBAABBAABBr
+    if (mat > mgae).any(): return True  # We find some this way, but not that many
     if ref >= ref_check_threshold and not find_1d(ref_last_n(ref, ref_check_length), ref_list): return False
     return unique_with_hash(mat, mat_list, mat_hash, mat_hash_list)
 
