@@ -3,21 +3,21 @@ import os
 import pickle
 
 max_length = None
-unique_results_all = []
-unique_results_length = []
+unique_matrices = np.zeros((0,3,3), dtype=dtype)
+unique_refs = []
 
 def main():
     print_program_start()
-    load("output 33")
+    load("output")
     # print(max_length)
-    # print(unique_results_all)
-    # print(unique_results_length)
+    # print(unique_matrices)
+    # print(unique_refs)
 
-    # for i, result in enumerate(unique_results_all):
-    #     if len(result["refs"]) > 300: print(str(i)+": "+str(len(result["refs"])))
+    # for i, result in enumerate(unique_refs):
+    #     if len(result) > 300: print(str(i)+": "+str(len(result)))
 
     # print(length_to_ref(max_length+1)-1)
-    # print(sum([len(unique_results_all[i]["refs"]) for i in range(len(unique_results_all))]))
+    # print(sum([len(unique_refs[i]) for i in range(len(unique_refs))]))
 
     # findEntry(15,1)
 
@@ -34,9 +34,9 @@ def main():
 
 def findEntry(length, entry):
     found = False
-    for i in range (len(unique_results_all)):
-        crr = unique_results_all[i]["refs"][0]
-        matrix = unique_results_all[i]["mat"]
+    for i in range (len(unique_refs)):
+        crr = unique_refs[i][0]
+        matrix = unique_matrices[i]
         if crr >= 2**length and crr < 2**(length+1):
             if found:
                 break
@@ -53,11 +53,13 @@ def findEntry(length, entry):
         print(str(m)+"\n")
 
 def load(output_dir):
-    global max_length, unique_results_all, unique_results_length
+    global max_length, unique_matrices, unique_refs
     with open(os.path.join(output_dir, "output_log.txt")) as output_log:
         max_length = int(output_log.readline().split("=")[1])
-    unique_results_all = unpickle_data(os.path.join(output_dir, "results_all.pickle"))
-    # unique_results_length = unpickle_data(os.path.join(output_dir, "results_length.pickle"))
+    unique_matrices = np.load(os.path.join(output_dir, "unique_matrices.npy"), allow_pickle=False)
+    refs_lengths = np.load(os.path.join(output_dir, "refs_lengths.npy"), allow_pickle=False)
+    refs_stacked = np.load(os.path.join(output_dir, "refs_stacked.npy"), allow_pickle=False)
+    unique_refs = np.split(refs_stacked, refs_lengths)  # This approach inspired by https://tonysyu.github.io/ragged-arrays.html
 
 def unpickle_data(filename):
     data = None
@@ -70,9 +72,9 @@ def matrices_of_extreme_entries(criterion):    # Returns one matrix per length w
     comparator = (lambda x, y: x < y) if criterion == "min" else (lambda x, y: x > y) if criterion == "max" else None
     for i in range(max_length+1):
         extreme_entries = [None]*9
-        for entry in unique_results_all:
-            if ref_to_length(entry["refs"][0]) == i:
-                these_entries = entry["mat"].reshape(1, 9).tolist()[0]
+        for entry in zip(unique_matrices, unique_refs):
+            if ref_to_length(entry[1][0]) == i:
+                these_entries = entry[0].reshape(1, 9).tolist()[0]
                 for j in range(9):
                     if extreme_entries[j] is None or comparator(abs(these_entries[j]), abs(extreme_entries[j])):
                         extreme_entries[j] = abs(these_entries[j])

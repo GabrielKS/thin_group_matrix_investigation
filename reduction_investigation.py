@@ -9,12 +9,12 @@ import pickle
 import numba
 
 # OUTPUT SETTINGS
-max_length = 32  # Maximum word length to examine
+max_length = 26  # Maximum word length to examine
 modulo = 0  # 0 for non-modular arithmetic, >1 to multiply and compare matrices using modular arithmetic
 print_times_length = True  # Whether or not to print how much time the steps take
-min_length_to_save = 28  # Minimum length to save the output files every iteration
+min_length_to_save = 25  # Minimum length to save the output files every iteration
 output_prefix = "output"  # First part of folder name (second part is for the mod, if any)
-write_files = False  # Whether or not to save output to files
+write_files = True  # Whether or not to save output to files
 max_refs_per_length = -1  # Maximum number of refs per length to store (all the others are discarded); -1 for keep them all
 
 # INTERMEDIATE SETTINGS
@@ -28,7 +28,8 @@ parallel = True
 # INTERMEDIATE DATA STRUCTURES
 words_cache = np.zeros((length_to_ref(cache_length+1), 3, 3), dtype=dtype)  # Element 0 of words is a 3x3 array of zeroes, a stand-in for None. Element i of words for i>0 is the matrix corresponding to ref i
 timers = {"analysis_time": 0, "summarization_time": 0}
-log_strings = {"analysis_time": "", "summarization_time": "", "results_summary": ""}
+logs = {"full_log": ""}
+sub_logs = {"analysis_time": "", "summarization_time": "", "results_summary": ""}
 states = {"length_calculated": -1, "length_saved": -1, "warnings": 0}
 totals = {"total_words": 0, "reduced_words": 0, "canonically_reduced_words": 0, "same_and_shorter_unique": 0, "reduced_nonunique": 0}
 unique_matrices = np.array([O3])  # A list of all the matrices in unique_results_all, for faster computation. We initialize with an entry because Numba doesn't like empty arrays.
@@ -41,8 +42,8 @@ mB = B % modulo if modulo > 0 else B
 mgae_length = numba.typed.List()  # Matrix of greatest absolute entries
 
 # OUTPUT DATA STRUCTURES
-unique_results_all = []  # Array of dictionaries per unique matrix {"mat": NumPy_matrix_representing_this_h, "refs": all_integer_representations_of_this_h}
-unique_results_length = []  # Similar to unique_results_all but one for each length, where the entries for each length do not contain any references to words of other lengths
+# unique_matrices (see above)
+unique_refs = [[0]]
 
 def main():
     print_program_start()
@@ -73,7 +74,7 @@ def analyze_new(length):
         current_matrices, current_matrices_hashed, current_refs = analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs, previous_mgae)
     t1 = time.perf_counter()
     consolidated_matrices, consolidated_matrices_hashed, consolidated_refs = consolidate_internal(current_matrices, current_matrices_hashed, current_refs)
-    print("Consolidation: "+str(time.perf_counter()-t1))
+    log("Consolidation: "+str(time.perf_counter()-t1))
     
     t1 = time.perf_counter()
     n_old_matrices = unique_matrices.shape[0]  # We'll just be searching through unique_matrices* for previous occurrences of matrices, so no need to save refs or keep anything unconsolidated
@@ -82,18 +83,15 @@ def analyze_new(length):
     unique_matrices[n_old_matrices:, :, :] = consolidated_matrices
     unique_matrices_hashed.resize((n_old_matrices+n_new_matrices))
     unique_matrices_hashed[n_old_matrices:] = consolidated_matrices_hashed
+    unique_refs.extend([list(r) for r in consolidated_refs])
     
     unique_matrices_length.append(current_matrices)  # For unique_*_length* we want to be able to iterate per ref, so we keep things unconsolidated and save the refs
     unique_matrices_length_hashed.append(current_matrices_hashed)
     unique_refs_length.append(current_refs)
 
-    formatted_results = [{"mat": result[0], "refs": result[1]} for result in zip(consolidated_matrices, consolidated_refs)]
-    unique_results_all.extend(formatted_results)
-    unique_results_length.append(formatted_results)
-
     mgae_length.append(np.max(np.abs(consolidated_matrices), axis=0))
 
-    print("Formatting: "+str(time.perf_counter()-t1))
+    log("Formatting: "+str(time.perf_counter()-t1))
 
 def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, previous_matrices, previous_matrices_hashed, previous_refs, ref_check_refs, previous_mgae):
     t1 = time.perf_counter()
@@ -101,12 +99,10 @@ def analyze_new_unconsolidated(length, unique_matrices, unique_matrices_hashed, 
     t2 = time.perf_counter()
     current_matrices, current_matrices_hashed, current_refs = flatten_chunks(n_chunks, chunked_matrices, chunked_matrices_hashed, chunked_refs)
     t3 = time.perf_counter()
-    print("Length "+str(length)+":")
+    log("Length "+str(length)+":")
     if previous_matrices.shape[0] > 0:
-        print("Primary: "+str(t2-t1))
-        print("Primary per chunk: "+str((t2-t1)/n_chunks))
-        print("Chunks: "+str(n_chunks))
-        print("Flattening: "+str(t3-t2))
+        log("Primary: "+str(t2-t1)+"/"+str(n_chunks)+"="+str((t2-t1)/n_chunks))
+        log("Flattening: "+str(t3-t2))
     return current_matrices, current_matrices_hashed, current_refs
 
 @numba.jit(nopython=True, parallel=parallel)  # This is the part that gets parallelized
@@ -121,16 +117,16 @@ def analyze_chunks(length, unique_matrices, unique_matrices_hashed, previous_mat
         chunked_matrices_hashed.append(O1.copy())
         chunked_refs.append(O1.copy())
 
-    for i_chunk in numba.prange(n_chunks):  # TODO: parallelize by changing range to prange and editing the Numba annotation
+    for i_chunk in numba.prange(n_chunks):  # pylint: disable=not-an-iterable
         start = i_chunk*chunk_size
         stop = min((i_chunk+1)*chunk_size, n_previous)
         these_previous_matrices = previous_matrices[start:stop]
         these_previous_matrices_hashed = previous_matrices_hashed[start:stop]
         these_previous_refs = previous_refs[start:stop]
         these_matrices, these_matrices_hashed, these_refs = analyze_chunk(unique_matrices, unique_matrices_hashed, these_previous_matrices, these_previous_matrices_hashed, these_previous_refs, ref_check_refs, previous_mgae)
-        chunked_matrices[i_chunk] = these_matrices
-        chunked_matrices_hashed[i_chunk] = these_matrices_hashed
-        chunked_refs[i_chunk] = these_refs
+        chunked_matrices[dtype(i_chunk)] = these_matrices  # Must explicitly cast i_chunk from unsigned to signed to avoid a warning
+        chunked_matrices_hashed[dtype(i_chunk)] = these_matrices_hashed
+        chunked_refs[dtype(i_chunk)] = these_refs
 
     return n_chunks, chunked_matrices, chunked_matrices_hashed, chunked_refs
 
@@ -231,26 +227,26 @@ def consolidate_internal(current_matrices, current_matrices_hashed, current_refs
 def summarize(length):  # Computes summary statistics for words of length length and all words up to length length. Prepare for lots of dense one-liners.
     t1 = time.perf_counter()
     total_words_length = length_to_ref(length)
-    canonically_reduced_words_length = count_true([ref_to_length(this_result["refs"][0]) == length for this_result in unique_results_all])  # A word of length length is canonically reduced if it is the first ref for its result
+    canonically_reduced_words_length = count_true([ref_to_length(this_result[0]) == length for this_result in unique_refs[1:]])  # A word of length length is canonically reduced if it is the first ref for its result
     reduced_words_length = sum([
-        0 if ref_to_length(this_result["refs"][0]) != length else
+        0 if ref_to_length(this_result[0]) != length else
         count_true([
             ref_to_length(ref) == length
-            for ref in this_result["refs"]])
-        for this_result in unique_results_all])  # A word of length length is reduced if the canonically reduced form of its matrix is of length length
+            for ref in this_result])
+        for this_result in unique_refs[1:]])  # A word of length length is reduced if the canonically reduced form of its matrix is of length length
     same_and_shorter_unique_length = count_true([
-        False if ref_to_length(this_result["refs"][0]) != length else
+        False if ref_to_length(this_result[0]) != length else
         count_true([
             ref_to_length(ref) == length
-            for ref in this_result["refs"]]) == 1
-        for this_result in unique_results_all])  # A word of length length is same-and-shorter unique if it is of length length and is canonically reduced and there are no other reduced forms of its matrix
+            for ref in this_result]) == 1
+        for this_result in unique_refs[1:]])  # A word of length length is same-and-shorter unique if it is of length length and is canonically reduced and there are no other reduced forms of its matrix
     reduced_nonunique_length = sum([
         (lambda n: 0 if n == 1 else n)
-            (0 if ref_to_length(this_result["refs"][0]) != length else
+            (0 if ref_to_length(this_result[0]) != length else
             count_true([
                 ref_to_length(ref) == length
-                for ref in this_result["refs"]]))
-        for this_result in unique_results_all])  # A word is reduced nonunique if it has the same length as the canonically reduced form of its matrix, if that is length length, and it is not the only one to satisfy this property
+                for ref in this_result]))
+        for this_result in unique_refs[1:]])  # A word is reduced nonunique if it has the same length as the canonically reduced form of its matrix, if that is length length, and it is not the only one to satisfy this property
     
     totals["total_words"] += total_words_length
     totals["reduced_words"] += reduced_words_length
@@ -262,7 +258,7 @@ def summarize(length):  # Computes summary statistics for words of length length
     t2 = time.perf_counter()
     timers["summarization_time"] += t2-t1
     log(format_ratio("Summarization time (length="+str(length)+")", t2-t1, timers["summarization_time"]), "summarization_time", print_times_length)
-    if print_times_length: print()
+    if print_times_length: log()
     
     log("Length "+str(length)+":", "results_summary")
     log(format_ratio("Total", total_words_length, totals["total_words"]), "results_summary")
@@ -281,9 +277,8 @@ def save_output(force=False):
     output_log = "length_calculated="+str(states["length_calculated"])+"\n"
     output_log += "modulo=" + (str(modulo) if modulo > 1 else "NONE")
     output_log += "\n\n"
-    output_log += "\n\n".join(["LOG "+log_string_key+":\n"+log_strings[log_string_key] for log_string_key in log_strings])
-    output_results_all = results_to_string(unique_results_all, "all")
-    output_results_length = "\n\n".join([results_to_string(unique_result_length, "length="+str(i)) for i, unique_result_length in enumerate(unique_results_length)])
+    output_log += "\n\n".join(["LOG "+log_string_key+":\n"+sub_logs[log_string_key] for log_string_key in sub_logs])
+    output_results = results_to_string(unique_matrices, unique_refs)
 
     output_dir = output_prefix+("_mod_"+str(modulo) if modulo > 1 else "")
     # Create the output folder if necessary
@@ -292,37 +287,36 @@ def save_output(force=False):
 
     # Write the text output
     write_output(output_log, output_dir, "output_log.txt")
-    write_output(output_results_all, output_dir, "output_results_all.txt")
-    write_output(output_results_length, output_dir, "output_results_length.txt")
+    write_output(output_results, output_dir, "output_results.txt")
 
-    # Pickle the important variables so they can be further analyzed programmatically
-    pickle_data(unique_results_all, output_dir, "results_all.pickle")
-    pickle_data(unique_results_length, output_dir, "results_length.pickle")
+    # Save the important variables in machine-readable format so they can be further analyzed programmatically
+    np.save(os.path.join(output_dir, "unique_matrices.npy"), unique_matrices[1:], allow_pickle=False)
+    refs_lengths = np.cumsum([len(ref) for ref in unique_refs[1:]][:-1])  # This approach inspired by https://tonysyu.github.io/ragged-arrays.html
+    refs_stacked = np.concatenate(unique_refs)
+    np.save(os.path.join(output_dir, "refs_stacked.npy"), refs_stacked, allow_pickle=False)
+    np.save(os.path.join(output_dir, "refs_lengths.npy"), refs_lengths, allow_pickle=False)
 
     states["length_saved"] = states["length_calculated"]
+    log("SAVED "+str(states["length_saved"]))
+    write_output(logs["full_log"], output_dir, "output_console.txt")  # Do this one at the end so we can capture the SAVED message
 
 def write_output(output, output_dir, filename):
     with open(os.path.join(output_dir, filename), "w") as output_file:
         output_file.write(output)
 
-def pickle_data(data, output_dir, filename):
-    with open(os.path.join(output_dir, filename), "wb") as data_file:
-        pickle.dump(data, data_file)
-
-def results_to_string(results, label):
-    matrices = "MATRICES ("+label+"):\n"
-    refs = "REFS ("+label+"):\n"
-    for i, result in enumerate(results):
-        matrices += str(i+1)+" (CRR="+str(result["refs"][0])+"):\n"+str(result["mat"])+"\n"  # CRR: canonical reduced ref(erence)
-        refs += str(i+1)+": "+str(result["refs"])+"\n"
-    return matrices+"\n"+refs
+def results_to_string(matrices, refs):
+    result = "MATRICES AND REFS:\n"
+    for i in range(1, len(refs)):
+        result += str(i)+": REFS="+str(refs[i])+"; MAT:\n"+str(matrices[i])+"\n"
+    return result
 
 def format_ratio(label, num, denom):  # Nicely formats a label and a ratio
     return label+": "+str(num)+"/"+str(denom)
 
-def log(output, log_string, print_output=True):
+def log(output="\n", sub_log=None, print_output=True):
     if print_output: print(output)
-    log_strings[log_string] += output+"\n"
+    if sub_log is not None: sub_logs[sub_log] += output+"\n"
+    logs["full_log"] += output+"\n"
 
 @numba.jit(numba.types.Tuple((numba_dtype[:,:], numba.types.bool_))(numba.types.Array(numba_dtype, 3, "A", readonly=True), numba_dtype, numba_dtype), nopython=True)
 def int_to_mat_cached(words_cache, ref, mod=0):
