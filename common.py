@@ -6,13 +6,16 @@ import numba
 dtype = np.int64  # NumPy datatype
 numba_dtype = numba.int64  # Numby datatype
 numba_dtype_str = "int64"
-warning_threshold = 2**30  # Warn us if numbers get this big
+hashtype = np.int64  # I hoped that a smaller datatype for hashes might make comparisons faster. It doesn't seem to help very much. TODO: figure out why reduction_investigation is no longer acception int16
+numba_hashtype = numba.int64
+warning_threshold = 2**53  # Warn us if numbers get this big
 
 A = np.array([[1,1,2],[0,1,1],[0,-3,-2]], dtype=dtype)
 B = np.array([[-2,0,-1],[-5,1,-1],[3,0,1]], dtype=dtype)
 I3 = np.identity(3, dtype=dtype)
 O3 = np.zeros((3,3), dtype=dtype)
 O3_1 = np.zeros((1,3,3), dtype=dtype)
+O1 = np.zeros((1), dtype=dtype)
 
 def random_H_str(length):
     result = ""
@@ -80,12 +83,30 @@ def multiply_3x3(a, b):  # Because Numba doesn't natively support matrix multipl
 
 @numba.jit(nopython=True)
 def warn_3x3(a):
-    return a[0,0] >= warning_threshold or a[0,1] >= warning_threshold or a[0,2] >= warning_threshold or a[1,0] >= warning_threshold or a[1,1] >= warning_threshold or a[1,2] >= warning_threshold or a[2,0] >= warning_threshold or a[2,1] >= warning_threshold or a[2,2] >= warning_threshold
+    return abs(a[0,0]) >= warning_threshold or abs(a[0,1]) >= warning_threshold or abs(a[0,2]) >= warning_threshold or abs(a[1,0]) >= warning_threshold or abs(a[1,1]) >= warning_threshold or abs(a[1,2]) >= warning_threshold or abs(a[2,0]) >= warning_threshold or abs(a[2,1]) >= warning_threshold or abs(a[2,2]) >= warning_threshold
 
 @numba.jit(nopython=True)
 def equals_lazy_3x3(a, b):  # Equivalent to np.equal(a, b).all()
     return a[0,0]==b[0,0] and a[0,1]==b[0,1] and a[0,2]==b[0,2] and a[1,0]==b[1,0] and a[1,1]==b[1,1] and a[1,2]==b[1,2] and a[2,0]==b[2,0] and a[2,1]==b[2,1] and a[2,2]==b[2,2]
 
-@numba.jit(nopython=True)
-def mat_hash_3x3(mat):  # A substitute for hash(mat.tobytes())
+@numba.jit(numba_hashtype(numba.types.Array(numba_dtype, 2, "A", readonly=True)), nopython=True)
+def hash_3x3(mat):  # A substitute for hash(mat.tobytes())
     return hash((mat[0,0], mat[0,1], mat[0,2], mat[1,0], mat[1,1], mat[1,2], mat[2,0], mat[2,1], mat[2,2]))
+
+@numba.jit(nopython=True)
+def multiply_ref_A(ref):
+    return ref << 1
+
+@numba.jit(nopython=True)
+def multiply_ref_B(ref):
+    return ref << 1 | 1
+
+@numba.jit(nopython=True)
+def list_with_element(elem):
+    l = numba.typed.List.empty_list(numba_dtype)
+    l.append(elem)
+    return l
+
+@numba.jit(nopython=True)
+def print_program_start():  # Print something conspicuous so it's easy to see the beginning of a program's output when scrolling up through lots of text in a terminal
+    print(("="*100+"\n")*10)

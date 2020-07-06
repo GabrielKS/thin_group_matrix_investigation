@@ -39,12 +39,32 @@ import numba
 
 # print(ref_to_length(1947355))
 
-@numba.jit(numba_dtype(numba_dtype[:,:], numba_dtype[:,:,:]), nopython=True)  # In this case, if we don't manually specify type, Numba actually slows things down.
-def find_first_equal(elem, elem_list):  # Returns the index of the first value of elem_list equal to elem, or -1 if there is no match
-    return 0
-    # for i in range((len(elem_list))):
-    #     if np.equal(elem, elem_list[i,:,:]).all(): return i
-    # return -1
+# @numba.jit(numba_dtype(numba_dtype[:,:], numba_dtype[:,:,:]), nopython=True)  # In this case, if we don't manually specify type, Numba actually slows things down.
+# def find_first_equal(elem, elem_list):  # Returns the index of the first value of elem_list equal to elem, or -1 if there is no match
+#     return 0
+#     # for i in range((len(elem_list))):
+#     #     if np.equal(elem, elem_list[i,:,:]).all(): return i
+#     # return -1
 
-ffe = find_first_equal(np.zeros((3,3), dtype=dtype), np.zeros((3,3,3), dtype=dtype))-1
-print(ffe)
+# ffe = find_first_equal(np.zeros((3,3), dtype=dtype), np.zeros((3,3,3), dtype=dtype))-1
+# print(ffe)
+
+# print(ref_to_length(663336102817))
+
+# print(ref_to_h(multiply_ref_A(h_to_ref("AABBAB"))))
+# print(ref_to_h(multiply_ref_B(h_to_ref("AABBAB"))))
+
+# l = numba.typed.List()
+# l.append(2)
+# print(repr(l))
+# print(numba.types.ListType)
+# print(numba.types.int64)
+# print(numba.types.ListType(numba.types.int64))
+# l = numba.typed.List.empty_list(numba.types.int64)
+# l.append(2)
+# l.append(2.2)  # Errors
+
+# print(type(hash_3x3(A)))
+
+print(ref_to_h(14380199))
+print(h_to_ref("BBB"))
