@@ -31,7 +31,7 @@ def main():
     for length in range(viewer.max_length+1):
         investigator.summarize(length)
     print("\nSAVING")
-    if write_files: investigator.save_output()
+    if write_files: investigator.save_output(label="_"+str(modulo))
     print("\nDONE")
 
 def analyze_mods(modulo):

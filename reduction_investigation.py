@@ -165,27 +165,31 @@ def summarize(length):  # Computes summary statistics for words of length length
     log(format_ratio("Reduced nonunique", reduced_nonunique_length, reduced_nonunique_all), "results_summary")
     log("", "results_summary")
 
-def save_output():
+def save_output(label=""):
     # Put together the text output
     output_log = "length_calculated="+str(states["length_calculated"])+"\n\n"+"\n\n".join(["LOG "+log_string_key+":\n"+log_strings[log_string_key] for log_string_key in log_strings])
     output_results_all = results_to_string(unique_results_all, "all")
     output_results_length = "\n\n".join([results_to_string(unique_result_length, "length="+str(i)) for i, unique_result_length in enumerate(unique_results_length)])
 
+    # Make the directory if necessary
+    if not os.path.exists(output_dir+label):
+        os.makedirs(output_dir+label)
+
     # Write the text output
-    write_output(output_log, "output_log.txt")
-    write_output(output_results_all, "output_results_all.txt")
-    write_output(output_results_length, "output_results_length.txt")
+    write_output(output_log, "output_log.txt", label)
+    write_output(output_results_all, "output_results_all.txt", label)
+    write_output(output_results_length, "output_results_length.txt", label)
 
     # Pickle the important variables so they can be further analyzed programmatically
-    pickle_data(unique_results_all, "results_all.pickle")
-    pickle_data(unique_results_length, "results_length.pickle")
+    pickle_data(unique_results_all, "results_all.pickle", label)
+    pickle_data(unique_results_length, "results_length.pickle", label)
 
-def write_output(output, filename):
-    with open(os.path.join(output_dir, filename), "w") as output_file:
+def write_output(output, filename, label=""):
+    with open(os.path.join(output_dir+label, filename), "w") as output_file:
         output_file.write(output)
 
-def pickle_data(data, filename):
-    with open(os.path.join(output_dir, filename), "wb") as data_file:
+def pickle_data(data, filename, label=""):
+    with open(os.path.join(output_dir+label, filename), "wb") as data_file:
         pickle.dump(data, data_file)
 
 def results_to_string(results, label):
