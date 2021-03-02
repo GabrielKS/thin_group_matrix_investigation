@@ -9,7 +9,7 @@ import pickle
 from numba import jit
 
 # OUTPUT SETTINGS
-max_length = 20  # Maximum word length to examine
+max_length = 23  # Maximum word length to examine
 print_times_length = True  # Whether or not to print how much time the steps take
 min_length_to_save = 17  # Minimum length to save the output files every iteration
 output_dir = "output"  # Output folder name
